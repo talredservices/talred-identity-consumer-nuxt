@@ -4,4 +4,5 @@ export {
   identityBrowserSession,
   requireIdentityUser,
   logoutIdentityApplication,
+  useServerIdentity,
 } from './server/identity.js'

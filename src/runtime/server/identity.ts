@@ -269,4 +269,21 @@ export async function logoutIdentityApplication(event: H3Event, name: string): P
   await current.clear()
 }
 
+/** Application-bound server facade for hosts that should not repeat consumer names. */
+export function useServerIdentity(event: H3Event, name: string) {
+  return {
+    user: () => identityBrowserSession(event, name),
+    requireUser: () => requireIdentityUser(event, name),
+    accessToken: () => identityAccessToken(event, name),
+    async optionalAccessToken(): Promise<string | undefined> {
+      if (!await identityBrowserSession(event, name)) return undefined
+      return await identityAccessToken(event, name)
+    },
+    authorize: (options?: Parameters<typeof beginIdentityAuthorization>[2]) => beginIdentityAuthorization(event, name, options),
+    accountPortal: (tab?: 'profile' | 'security') => beginIdentityAccountPortal(event, name, tab),
+    completeAuthorization: (code: string, state: string, connection?: 'primary' | 'sandbox') => completeIdentityAuthorization(event, name, code, state, connection),
+    logout: () => logoutIdentityApplication(event, name),
+  }
+}
+
 export { safeLocalPath }

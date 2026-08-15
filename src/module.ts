@@ -42,6 +42,11 @@ const zoltaIdentityConsumerModule: NuxtModule<ZoltaIdentityConsumerModuleOptions
 
     addImports([
       { name: 'useZoltaIdentitySession', from: resolver.resolve('./runtime/client/session') },
+      { name: 'useZoltaIdentity', from: resolver.resolve('./runtime/client/identity') },
+      { name: 'useZoltaIdentityFetch', from: resolver.resolve('./runtime/client/identity') },
+      { name: 'useZoltaIdentityUnauthorizedHandler', from: resolver.resolve('./runtime/client/identity') },
+      { name: 'resolveIdentityRedirect', from: resolver.resolve('./runtime/client/identity') },
+      { name: 'resolveIdentityAuthIntent', from: resolver.resolve('./runtime/client/identity') },
       { name: 'createZoltaIdentityRouteMiddleware', from: resolver.resolve('./runtime/client/middleware') },
     ])
   },
