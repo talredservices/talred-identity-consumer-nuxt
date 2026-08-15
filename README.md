@@ -4,7 +4,7 @@ Server-side hosted-auth consumer for [Zolta Identity](https://github.com/zoltaso
 
 This is deliberately an authentication integration, not a UI kit. It does not install a dashboard, user menu, login page, global middleware, or domain authorization policy.
 
-> **Beta status:** `0.1.0-beta.1` supports the Zolta Identity API v1 hosted-auth contract. Expect small API changes before `1.0`; pin the beta version in production and read the changelog before upgrading.
+> **Beta status:** `0.1.0-beta.8` supports the Zolta Identity API v1 hosted-auth contract. Expect small API changes before `1.0`; pin the beta version in production and read the changelog before upgrading.
 
 ## Install
 
@@ -105,6 +105,45 @@ For an application named `document-studio`, the module registers these no-store 
 
 Use the account route only for an authenticated user's **Manage identity** action. The opaque intent is issued and consumed by Identity; consumers never sign or validate it, and no access or refresh token is placed in the browser URL.
 
+## Client API
+
+`useZoltaIdentity` is the recommended application-bound client facade. It adds
+public session state, safe login navigation, logout, and account-portal
+navigation on top of the low-level `useZoltaIdentitySession` composable.
+
+```ts
+const { csrf, headerName } = useCsrf()
+
+const identity = useZoltaIdentity('document-studio', {
+  defaultRedirect: '/document-studio',
+  loginPath: '/auth/login', // optional host-owned interstitial page
+  logoutHeaders: () => ({ [headerName]: csrf }),
+})
+
+await identity.refresh()
+
+identity.user.value
+identity.loggedIn.value
+identity.ready.value
+
+await identity.login('/document-studio')
+await identity.logout()
+await identity.openAccountPortal('security')
+```
+
+When `loginPath` is omitted, `login()` navigates directly to the module's BFF
+authorization endpoint. Set it when the host needs a localized interstitial
+route, product-specific context, analytics, or another host-owned step before
+hosted authentication.
+
+The facade accepts these account sections:
+
+- `profile`, `sessions`, and `privacy` open the hosted profile tab.
+- `password` and `security` open the hosted security tab.
+
+Use `useZoltaIdentitySession` when a host needs only the low-level public
+session resource and wants to own all navigation itself:
+
 Start login from a page, component, or server route:
 
 ```vue
@@ -117,6 +156,60 @@ const identity = useZoltaIdentitySession('document-studio')
 </template>
 ```
 
+### Authenticated fetch and expired sessions
+
+`useZoltaIdentityFetch` wraps Nuxt request fetching and applies one consistent
+response policy: a browser-side `401` clears the consumer session and begins a
+new login. Other errors are rethrown unchanged.
+
+```ts
+const { csrf, headerName } = useCsrf()
+
+const authenticatedFetch = useZoltaIdentityFetch('document-studio', {
+  defaultRedirect: '/document-studio',
+  loginPath: '/auth/login',
+  logoutHeaders: () => ({ [headerName]: csrf }),
+})
+
+const documents = await authenticatedFetch<Document[]>('/api/documents')
+```
+
+This is useful for application BFF calls where an expired Identity session
+should return the user to authentication. It does not add authorization
+headers or CSRF headers to the requested operation. The host must still attach
+its own CSRF header to protected mutations.
+
+For custom transports, use `useZoltaIdentityUnauthorizedHandler` directly:
+
+```ts
+const unauthorized = useZoltaIdentityUnauthorizedHandler('document-studio', {
+  defaultRedirect: '/document-studio',
+  loginPath: '/auth/login',
+})
+
+try {
+  await customClient.request('/documents')
+} catch (error) {
+  await unauthorized.handle(error)
+  throw error
+}
+```
+
+### Redirects and hosted intents
+
+The module auto-imports two pure helpers for hosts that expose routes such as
+`/auth/[action]`:
+
+```ts
+const intent = resolveIdentityAuthIntent(String(route.params.action))
+// login | register | forgot-password | reset-password | null
+
+const returnTo = resolveIdentityRedirect(route.query.redirect, '/dashboard')
+```
+
+`resolveIdentityRedirect` accepts only local absolute paths. Use it before
+placing user-controlled route or query values into an authentication flow.
+
 Protect selected routes without installing a global guard:
 
 ```ts
@@ -128,7 +221,40 @@ export default createZoltaIdentityRouteMiddleware('document-studio')
 definePageMeta({ middleware: ['require-document-studio-auth'] })
 ```
 
-For a Laravel BFF endpoint, read the token only on the Nuxt server:
+## Server API
+
+`useServerIdentity` binds the current H3 event and one configured application,
+which avoids repeating the application name across a BFF handler or service:
+
+```ts
+import { useServerIdentity } from '@zoltasoft/identity-consumer-nuxt/runtime'
+
+export default defineEventHandler(async (event) => {
+  const identity = useServerIdentity(event, 'document-studio')
+  const user = await identity.requireUser()
+  const token = await identity.accessToken()
+
+  // Call the application service with `Authorization: Bearer ${token}`.
+  return { user }
+})
+```
+
+The facade provides:
+
+| Method | Use case |
+| --- | --- |
+| `user()` | Read the public user or `null` without requiring authentication. |
+| `requireUser()` | Reject an unauthenticated BFF request with `401`. |
+| `accessToken()` | Get a valid access token, refreshing it server-side when needed. |
+| `optionalAccessToken()` | Add authentication to an upstream request only when a session exists. |
+| `authorize(options)` | Begin hosted authentication from a custom server handler. |
+| `accountPortal(tab)` | Begin an authenticated hosted account-portal handoff. |
+| `completeAuthorization(...)` | Complete a custom callback implementation. |
+| `logout()` | Revoke remote access when possible and clear the local session. |
+
+The original server functions remain available for focused utilities and
+backward compatibility. For example, a Laravel BFF endpoint can read the token
+only on the Nuxt server:
 
 ```ts
 import { identityAccessToken, requireIdentityUser } from '@zoltasoft/identity-consumer-nuxt/runtime'
@@ -141,7 +267,98 @@ export default defineEventHandler(async (event) => {
 })
 ```
 
-If your host app protects POST requests with CSRF middleware, pass that header into `identity.logout({ headers })`; this package does not silently weaken the host's CSRF policy.
+## Authentication flows and use cases
+
+### Hosted sign-in or registration
+
+1. The host calls `identity.login(returnTo, intent)` or sends the browser to
+   the registered `auth/authorize` BFF route.
+2. The consumer creates a random state transaction in an encrypted HTTP-only
+   cookie and redirects to the configured hosted application.
+3. Identity authenticates or registers the user and returns a short-lived
+   handoff code to the consumer callback.
+4. The consumer validates state, exchanges the code with its confidential
+   client, stores tokens server-side, and redirects to the validated local
+   `returnTo` path.
+5. Browser code receives only the public user through `refresh()` or the
+   session endpoint.
+
+Use this flow for sign-in, account creation, password recovery, and email/token
+handoffs while keeping credentials and tokens outside the browser.
+
+### Calling an upstream application API
+
+1. A browser component calls the host's Nuxt BFF route.
+2. The BFF creates `useServerIdentity(event, application)` and obtains an
+   access token.
+3. The consumer refreshes an expired access token with the confidential
+   client when necessary.
+4. The BFF forwards the access token to Laravel or another protected upstream
+   API and returns an application-shaped response to the browser.
+
+Use `accessToken()` for protected operations and `optionalAccessToken()` for
+pages that support both anonymous and authenticated responses.
+
+### Hosted account management
+
+1. An authenticated user selects **Manage identity** in the host.
+2. `openAccountPortal()` enters the consumer account authorization route.
+3. The consumer proves the current Identity session to the API and requests a
+   short-lived, single-use portal intent.
+4. The browser is sent through hosted account authentication before entering
+   profile or security settings.
+
+Use this instead of linking directly to the account UI. Hosts remain
+responsible for deciding whether temporary, sandbox, or restricted users may
+enter account management.
+
+### Session expiration and logout
+
+For normal logout, the consumer attempts remote token revocation and always
+clears its encrypted session. For an expired browser session,
+`useZoltaIdentityFetch` can centralize the host's `401` recovery and redirect
+policy. Domain authorization failures such as `403` are never converted into
+login redirects.
+
+### Sandbox demo sessions
+
+The hosted callback identifies whether the handoff uses the primary or sandbox
+connection. The consumer stores that binding and uses the matching confidential
+client for exchanges, refreshes, and logout. Hosts still own demo policy: they
+may hide account-management actions, block portal routes, display expiration
+notices, or limit domain operations for temporary users.
+
+## Client and server import boundaries
+
+- Import Nitro helpers from `@zoltasoft/identity-consumer-nuxt/runtime`.
+- Import client composables explicitly from
+  `@zoltasoft/identity-consumer-nuxt/runtime/client`, or use the Nuxt
+  auto-imports registered by the module.
+- Do not import `runtime/client` from server routes or server utilities.
+
+Keeping this boundary prevents Vue application aliases such as `nuxt/app` and
+`#build` from entering the Nitro server bundle.
+
+## Local package development
+
+An adjacent Nuxt host can test an unpublished consumer build directly:
+
+```json
+{
+  "dependencies": {
+    "@zoltasoft/identity-consumer-nuxt": "file:../zolta-identity-consumer-nuxt"
+  }
+}
+```
+
+After changing the consumer, run `pnpm build` in this repository and refresh
+the dependency in the host. Run both applications with their supported Node
+version so native host dependencies are rebuilt for the correct runtime.
+
+If your host protects POST requests with CSRF middleware, configure
+`logoutHeaders` on `useZoltaIdentity`, or pass `{ headers }` to the low-level
+`useZoltaIdentitySession().logout()` method. The package does not silently
+weaken the host's CSRF policy.
 
 ## Security model
 
