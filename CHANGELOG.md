@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- Add `createIdentityApiClient`, an Identity-session adapter for the standalone
+  `@zoltasoft/api-client` transport with one refresh-and-retry attempt on `401`.
+- Expose forced access-token refresh through the server facade for custom BFF
+  transports.
+
 ## 0.1.0-beta.8 - 2026-08-14
 
 - Route hosted account authorization to the dedicated `/account/authenticate` entry page, keeping account settings independent from credential collection.

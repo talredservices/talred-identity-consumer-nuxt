@@ -253,7 +253,7 @@ The facade provides:
 | `logout()` | Revoke remote access when possible and clear the local session. |
 
 The original server functions remain available for focused utilities and
-backward compatibility. For example, a Laravel BFF endpoint can read the token
+backward compatibility. For example, a protected BFF endpoint can read the token
 only on the Nuxt server:
 
 ```ts
@@ -266,6 +266,33 @@ export default defineEventHandler(async (event) => {
   return { user }
 })
 ```
+
+### Authenticated Zolta API client
+
+Use `createIdentityApiClient` when a BFF talks to an API protected by the same
+Zolta Identity application. It combines the generic
+`@zoltasoft/api-client` transport with the consumer session: it attaches the
+current bearer token, refreshes an expired session after the first `401`, and
+retries the request once. If refresh fails, it clears the local Identity
+session. API failures remain typed `ZoltaApiError` values.
+
+```ts
+import { createIdentityApiClient } from '@zoltasoft/identity-consumer-nuxt/runtime'
+
+export default defineEventHandler(async (event) => {
+  const api = await createIdentityApiClient(event, 'document-studio', {
+    baseURL: useRuntimeConfig(event).zoltaApiUrl,
+    internalToken: useRuntimeConfig(event).internalServiceToken,
+  })
+
+  return api('/v1/documents')
+})
+```
+
+Set `requireAuthentication: false` for an endpoint that accepts anonymous
+requests but should attach the current access token when one exists. The
+generic transport is intentionally a separate package: use
+`@zoltasoft/api-client` directly when no Zolta Identity session is involved.
 
 ## Authentication flows and use cases
 
@@ -289,12 +316,12 @@ handoffs while keeping credentials and tokens outside the browser.
 ### Calling an upstream application API
 
 1. A browser component calls the host's Nuxt BFF route.
-2. The BFF creates `useServerIdentity(event, application)` and obtains an
-   access token.
+2. The BFF creates `createIdentityApiClient(event, application, options)` (or
+   uses `useServerIdentity` for a custom transport).
 3. The consumer refreshes an expired access token with the confidential
-   client when necessary.
-4. The BFF forwards the access token to Laravel or another protected upstream
-   API and returns an application-shaped response to the browser.
+   client when necessary. A rejected token is refreshed and retried once.
+4. The BFF forwards the authenticated request to the protected Zolta API and
+   returns an application-shaped response to the browser.
 
 Use `accessToken()` for protected operations and `optionalAccessToken()` for
 pages that support both anonymous and authenticated responses.
@@ -346,6 +373,7 @@ An adjacent Nuxt host can test an unpublished consumer build directly:
 ```json
 {
   "dependencies": {
+    "@zoltasoft/api-client": "file:../api-client",
     "@zoltasoft/identity-consumer-nuxt": "file:../zolta-identity-consumer-nuxt"
   }
 }
