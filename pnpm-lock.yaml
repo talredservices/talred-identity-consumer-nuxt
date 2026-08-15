@@ -11,6 +11,9 @@ importers:
       '@nuxt/kit':
         specifier: ^4.4.8
         version: 4.5.2(magic-string@1.1.0)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))
+      '@zoltasoft/api-client':
+        specifier: file:../api-client
+        version: file:../api-client
       h3:
         specifier: ^1.15.4
         version: 1.15.11
@@ -1346,6 +1349,10 @@ packages:
 
   '@vue/shared@3.5.41':
     resolution: {integrity: sha512-IOnwSCma8j+9xJT6b8H0dEYidC80NsYmNMlZxRsukYcSoGaDBohog5hDxzeUXdFeGWFA++vWvxqOmrr96VlqMA==}
+
+  '@zoltasoft/api-client@file:../api-client':
+    resolution: {directory: ../api-client, type: directory}
+    engines: {node: '>=22.0.0', pnpm: '>=10.0.0'}
 
   abbrev@3.0.1:
     resolution: {integrity: sha512-AO2ac6pjRB3SJmGJo+v5/aK6Omggp6fsLrs6wN9bd35ulu4cCwaAU9+7ZhXjeqHVkaHThLuzH0nZr0YpCDhygg==}
@@ -5549,6 +5556,10 @@ snapshots:
       '@vue/shared': 3.5.41
 
   '@vue/shared@3.5.41': {}
+
+  '@zoltasoft/api-client@file:../api-client':
+    dependencies:
+      ofetch: 1.5.1
 
   abbrev@3.0.1: {}
 

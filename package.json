@@ -58,6 +58,7 @@
   },
   "dependencies": {
     "@nuxt/kit": "^4.4.8",
+    "@zoltasoft/api-client": "file:../api-client",
     "h3": "^1.15.4",
     "nitropack": "^2.13.4",
     "ofetch": "^1.5.1",

@@ -33,6 +33,7 @@ import {
   completeIdentityAuthorization,
   identityApplication,
   identityAccessToken,
+  refreshIdentityAccessToken,
   logoutIdentityApplication,
   requireIdentityUser,
   safeLocalPath,
@@ -204,6 +205,17 @@ describe('Zolta Identity consumer security boundary', () => {
 
     await expect(identityAccessToken({} as never, 'document-studio')).resolves.toBe('access-token')
     expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('can force a refresh after an upstream API rejects a valid token', async () => {
+    const destination = await beginIdentityAuthorization({} as never, 'document-studio')
+    mocks.fetch.mockResolvedValueOnce(response)
+    await completeIdentityAuthorization({} as never, 'document-studio', 'handoff-code-that-is-long-enough', new URL(destination).searchParams.get('state')!)
+    mocks.fetch.mockClear()
+    mocks.fetch.mockResolvedValueOnce(response)
+
+    await expect(refreshIdentityAccessToken({} as never, 'document-studio')).resolves.toBe('access-token')
+    expect(mocks.fetch).toHaveBeenCalledWith('/api/v1/identity/auth/refresh', expect.any(Object))
   })
 
   it('requires an authenticated session before exposing a user to a server route', async () => {

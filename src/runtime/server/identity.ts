@@ -230,10 +230,20 @@ export async function identityAccessToken(event: H3Event, name: string): Promise
   if (!secure?.accessToken || !secure.refreshToken) {
     throw createError({ statusCode: 401, statusMessage: 'An Identity session is required.' })
   }
-  const client = tokenApplication(event, application, secure.connection ?? 'primary')
   const expiresAt = Date.parse(secure.accessTokenExpiresAt)
   if (Number.isFinite(expiresAt) && expiresAt > Date.now() + 30_000) return secure.accessToken
 
+  return await refreshIdentityAccessToken(event, name)
+}
+
+export async function refreshIdentityAccessToken(event: H3Event, name: string): Promise<string> {
+  const application = identityApplication(event, name)
+  const current = await applicationSession(event, name, application)
+  const secure = current.data.secure
+  if (!secure?.refreshToken) {
+    throw createError({ statusCode: 401, statusMessage: 'An Identity session is required.' })
+  }
+  const client = tokenApplication(event, application, secure.connection ?? 'primary')
   const response = await $fetch<{ data: IdentityLoginData }>('/api/v1/identity/auth/refresh', {
     baseURL: client.identityApiUrl,
     method: 'POST',
@@ -275,6 +285,7 @@ export function useServerIdentity(event: H3Event, name: string) {
     user: () => identityBrowserSession(event, name),
     requireUser: () => requireIdentityUser(event, name),
     accessToken: () => identityAccessToken(event, name),
+    refreshAccessToken: () => refreshIdentityAccessToken(event, name),
     async optionalAccessToken(): Promise<string | undefined> {
       if (!await identityBrowserSession(event, name)) return undefined
       return await identityAccessToken(event, name)

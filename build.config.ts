@@ -6,6 +6,7 @@ export default defineBuildConfig({
     'src/runtime/index',
     'src/runtime/client',
     'src/runtime/server/identity',
+    'src/runtime/server/api-client',
     'src/runtime/server/api/authorize.get',
     'src/runtime/server/api/callback.get',
     'src/runtime/server/api/session.get',
@@ -19,7 +20,7 @@ export default defineBuildConfig({
   ],
   declaration: true,
   clean: true,
-  externals: ['@nuxt/kit', '@nuxt/schema', 'h3', 'nitropack/runtime/config', 'nuxt/app', 'ofetch', 'vue', 'zod'],
+  externals: ['@nuxt/kit', '@nuxt/schema', '@zoltasoft/api-client', 'h3', 'nitropack/runtime/config', 'nuxt/app', 'ofetch', 'vue', 'vue-router', 'zod'],
   rollup: {
     emitCJS: false,
   },
