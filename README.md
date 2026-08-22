@@ -38,7 +38,11 @@ export default defineNuxtConfig({
           callbackUrl: 'https://studio.example.com/api/identity/document-studio/auth/callback',
           sessionCookie: 'zolta-document-studio-session',
           defaultRedirect: '/document-studio',
+          logoutRedirect: '/auth/login',
           sandboxApplication: 'documentStudioSandbox',
+          features: {
+            demoAccount: true,
+          },
         },
         documentStudioSandbox: {
           identityApiUrl: '',
@@ -66,7 +70,9 @@ NUXT_ZOLTA_IDENTITY_APPLICATIONS_DOCUMENT_STUDIO_HOSTED_APPLICATION=document-stu
 NUXT_ZOLTA_IDENTITY_APPLICATIONS_DOCUMENT_STUDIO_CALLBACK_URL=https://studio.example.com/api/identity/document-studio/auth/callback
 NUXT_ZOLTA_IDENTITY_APPLICATIONS_DOCUMENT_STUDIO_SESSION_COOKIE=zolta-document-studio-session
 NUXT_ZOLTA_IDENTITY_APPLICATIONS_DOCUMENT_STUDIO_DEFAULT_REDIRECT=/document-studio
+NUXT_ZOLTA_IDENTITY_APPLICATIONS_DOCUMENT_STUDIO_LOGOUT_REDIRECT=/auth/login
 NUXT_ZOLTA_IDENTITY_APPLICATIONS_DOCUMENT_STUDIO_SANDBOX_APPLICATION=documentStudioSandbox
+NUXT_ZOLTA_IDENTITY_APPLICATIONS_DOCUMENT_STUDIO_FEATURES_DEMO_ACCOUNT=true
 NUXT_ZOLTA_IDENTITY_APPLICATIONS_DOCUMENT_STUDIO_SANDBOX_IDENTITY_API_URL=https://identity-api.example.com
 NUXT_ZOLTA_IDENTITY_APPLICATIONS_DOCUMENT_STUDIO_SANDBOX_HOSTED_AUTH_URL=https://identity.example.com
 NUXT_ZOLTA_IDENTITY_APPLICATIONS_DOCUMENT_STUDIO_SANDBOX_CLIENT_ID=<sandbox-confidential-client-id>
@@ -85,8 +91,13 @@ To offer the hosted **Create instant demo account** action, create a separate
 sandbox project and a dedicated sandbox BFF client in the Identity Console.
 Link that client in the hosted application's **Sandbox client ID** field. Add a
 second application configuration and set the live configuration's
-`sandboxApplication` to its key, as shown above. Both BFF configurations must
+`sandboxApplication` to its key, then explicitly enable
+`features.demoAccount` on the live application, as shown above. The feature is
+disabled by default and is carried to hosted Identity through a short-lived,
+client-authenticated authorization intent. Both BFF configurations must
 use the exact callback URL registered on the hosted application. The module
+also rejects reused live client IDs or secrets and mismatched hosted-application
+keys before redirecting to hosted authentication. The module
 uses the callback's connection binding to exchange and refresh sandbox tokens
 with the sandbox client while preserving one normal consumer session.
 
@@ -99,11 +110,13 @@ For an application named `document-studio`, the module registers these no-store 
 | `GET /api/identity/document-studio/auth/authorize` | Stores a state transaction then redirects to hosted auth. |
 | `GET /api/identity/document-studio/auth/callback` | Validates state, exchanges the handoff code, and redirects locally. |
 | `GET /api/identity/document-studio/auth/session` | Returns only the public user profile or `null`. |
-| `POST /api/identity/document-studio/auth/logout` | Revokes remote access when possible and clears the local session. |
+| `POST /api/identity/document-studio/auth/logout` | Creates a one-time hosted logout handoff, revokes remote access when possible, clears the local session, and returns the hosted `redirectUrl`. |
 | `GET /api/identity/document-studio/account/authorize` | Requires an existing Identity session, creates a short-lived one-time account-portal intent, then redirects to the hosted account authentication page before settings. |
 | `GET /api/identity/document-studio/account/logout` | Clears the consumer session and begins a new hosted sign-in flow after account-portal logout. |
 
 Use the account route only for an authenticated user's **Manage identity** action. The opaque intent is issued and consumed by Identity; consumers never sign or validate it, and no access or refresh token is placed in the browser URL.
+
+`useZoltaIdentity(...).logout(returnTo)` performs the complete browser flow. `returnTo` must be a local path; Identity combines it with the hosted application's registered `application_url` after consuming the short-lived, single-use intent.
 
 ## Client API
 
@@ -117,6 +130,7 @@ const { csrf, headerName } = useCsrf()
 const identity = useZoltaIdentity('document-studio', {
   defaultRedirect: '/document-studio',
   loginPath: '/auth/login', // optional host-owned interstitial page
+  logoutRedirect: '/auth/login',
   logoutHeaders: () => ({ [headerName]: csrf }),
 })
 

@@ -1,6 +1,6 @@
 {
   "name": "@zoltasoft/identity-consumer-nuxt",
-  "version": "0.1.0-beta.8",
+  "version": "0.1.0-beta.11",
   "description": "Server-side Nuxt consumer for Zolta Identity hosted authentication.",
   "license": "MIT",
   "author": "ZoltaSoft",
@@ -45,11 +45,11 @@
   "scripts": {
     "build": "unbuild",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "pnpm build && vitest run",
     "test:contract": "vitest run test/contract.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm test && pnpm lint && pnpm typecheck && pnpm build",
+    "check": "pnpm test && pnpm lint && pnpm typecheck",
     "prepack": "pnpm build"
   },
   "peerDependencies": {

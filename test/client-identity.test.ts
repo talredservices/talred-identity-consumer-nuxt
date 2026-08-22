@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   navigateTo: vi.fn(),
+  requestFetch: vi.fn(),
   states: new Map<string, { value: unknown }>(),
 }))
 
 vi.mock('nuxt/app', () => ({
   navigateTo: mocks.navigateTo,
-  useRequestFetch: () => vi.fn(),
+  useRequestFetch: () => mocks.requestFetch,
   useRuntimeConfig: () => ({ public: { zoltaIdentityConsumer: { routePrefix: '/api/identity' } } }),
   useState: (key: string, factory: () => unknown) => {
     if (!mocks.states.has(key)) mocks.states.set(key, { value: factory() })
@@ -19,12 +20,14 @@ import {
   identityResponseStatus,
   resolveIdentityAuthIntent,
   resolveIdentityRedirect,
+  useZoltaIdentity,
 } from '../src/runtime/client/identity.js'
 import { identityAccountRoute } from '../src/runtime/client/routes.js'
 
 describe('Zolta Identity host helpers', () => {
   beforeEach(() => {
     mocks.navigateTo.mockReset()
+    mocks.requestFetch.mockReset()
     mocks.states.clear()
   })
 
@@ -50,5 +53,43 @@ describe('Zolta Identity host helpers', () => {
   it('builds application-scoped account routes', () => {
     expect(identityAccountRoute('document studio', 'authorize'))
       .toBe('/api/identity/document%20studio/account/authorize')
+  })
+
+  it('clears client state and follows the hosted logout handoff', async () => {
+    mocks.requestFetch.mockResolvedValueOnce({ redirectUrl: 'https://identity.example.test/auth/logout?intent=opaque' })
+    const identity = useZoltaIdentity('document-studio')
+    identity.session.value = { user: { id: '1' } as never }
+
+    await identity.logout('/signed-out')
+
+    expect(identity.user.value).toBeNull()
+    expect(mocks.requestFetch).toHaveBeenCalledWith('/api/identity/document-studio/auth/logout', expect.objectContaining({
+      method: 'POST',
+      body: { returnTo: '/signed-out' },
+    }))
+    expect(mocks.navigateTo).toHaveBeenCalledWith('https://identity.example.test/auth/logout?intent=opaque', { external: true })
+  })
+
+  it('redirects to the signed-out destination when the handoff service fails', async () => {
+    mocks.requestFetch.mockRejectedValueOnce(new Error('Identity unavailable'))
+    const identity = useZoltaIdentity('document-studio')
+    identity.session.value = { user: { id: '1' } as never }
+
+    await identity.logout('/auth/login')
+
+    expect(identity.user.value).toBeNull()
+    expect(mocks.navigateTo).toHaveBeenCalledWith('/auth/login')
+  })
+
+  it('uses the configured logout destination when the caller does not override it', async () => {
+    mocks.requestFetch.mockRejectedValueOnce(new Error('Identity unavailable'))
+    const identity = useZoltaIdentity('job-tracker', { logoutRedirect: '/fr/auth/login' })
+
+    await identity.logout()
+
+    expect(mocks.requestFetch).toHaveBeenCalledWith('/api/identity/job-tracker/auth/logout', expect.objectContaining({
+      body: { returnTo: '/fr/auth/login' },
+    }))
+    expect(mocks.navigateTo).toHaveBeenCalledWith('/fr/auth/login')
   })
 })

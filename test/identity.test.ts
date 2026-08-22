@@ -30,6 +30,7 @@ vi.mock('ofetch', () => ({ $fetch: mocks.fetch }))
 import {
   beginIdentityAuthorization,
   beginIdentityAccountPortal,
+  beginIdentityLogout,
   completeIdentityAuthorization,
   identityApplication,
   identityAccessToken,
@@ -62,7 +63,9 @@ function configure(overrides: Record<string, unknown> = {}) {
           hostedApplication: 'document-studio',
           callbackUrl: 'https://studio.example.test/api/identity/document-studio/auth/callback',
           defaultRedirect: '/documents',
+          logoutRedirect: '/auth/login',
           sandboxApplication: 'documentStudioSandbox',
+          features: { demoAccount: true },
           ...overrides,
         },
         documentStudioSandbox: {
@@ -124,7 +127,58 @@ describe('Zolta Identity consumer security boundary', () => {
     expect(safeLocalPath('https://attacker.example', '/documents')).toBe('/documents')
   })
 
+  it('binds the host demo policy to an Identity-issued authorization intent', async () => {
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'authorization-intent' } })
+
+    const destination = await beginIdentityAuthorization({} as never, 'document-studio')
+
+    expect(new URL(destination).searchParams.get('intent')).toBe('authorization-intent')
+    expect(mocks.fetch).toHaveBeenCalledWith('/api/v1/identity/auth/authorization/intent', expect.objectContaining({
+      method: 'POST',
+      body: expect.objectContaining({
+        client_id: 'client-id',
+        hosted_application: 'document-studio',
+        demo_account_enabled: true,
+      }),
+    }))
+  })
+
+  it('requires a sandbox application when the host enables demo accounts', () => {
+    configure({ sandboxApplication: undefined, features: { demoAccount: true } })
+
+    expect(() => identityApplication({} as never, 'document-studio'))
+      .toThrow('sandboxApplication is required when the demo account feature is enabled')
+  })
+
+  it.each([
+    [{ clientId: 'sandbox-client-id' }, 'sandbox client credentials must be distinct'],
+    [{ clientSecret: 'sandbox-client-secret' }, 'sandbox client credentials must be distinct'],
+    [{ hostedApplication: 'another-application' }, 'sandbox hostedApplication must match'],
+    [{ callbackUrl: 'https://studio.example.test/another-callback' }, 'sandbox callbackUrl must exactly match'],
+  ])('rejects an invalid demo sandbox configuration', async (overrides, message) => {
+    configure(overrides)
+
+    await expect(beginIdentityAuthorization({} as never, 'document-studio')).rejects.toThrow(message)
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects a new sandbox callback when the host demo policy is disabled', async () => {
+    configure({ features: { demoAccount: false } })
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'authorization-intent' } })
+    const destination = await beginIdentityAuthorization({} as never, 'document-studio')
+
+    await expect(completeIdentityAuthorization(
+      {} as never,
+      'document-studio',
+      'handoff-code-that-is-long-enough',
+      new URL(destination).searchParams.get('state')!,
+      'sandbox',
+    )).rejects.toThrow('Demo sandbox accounts are disabled')
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+  })
+
   it('exchanges a valid callback once and clears the state transaction', async () => {
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'authorization-intent' } })
     const destination = await beginIdentityAuthorization({} as never, 'document-studio', { returnTo: '/documents/new' })
     const state = new URL(destination).searchParams.get('state')!
     mocks.fetch.mockResolvedValueOnce(response)
@@ -156,6 +210,7 @@ describe('Zolta Identity consumer security boundary', () => {
   })
 
   it('exchanges and refreshes a sandbox handoff with the sandbox BFF client in the primary session', async () => {
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'authorization-intent' } })
     const destination = await beginIdentityAuthorization({} as never, 'document-studio')
     const state = new URL(destination).searchParams.get('state')!
     mocks.fetch.mockResolvedValueOnce(response)
@@ -176,6 +231,7 @@ describe('Zolta Identity consumer security boundary', () => {
   })
 
   it('rejects an expired callback transaction', async () => {
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'authorization-intent' } })
     const destination = await beginIdentityAuthorization({} as never, 'document-studio')
     const transaction = mocks.records.get('zolta-identity-document-studio-session-transaction')!
     transaction.data.createdAt = Date.now() - (10 * 60 * 1000) - 1
@@ -185,6 +241,7 @@ describe('Zolta Identity consumer security boundary', () => {
   })
 
   it('refreshes an expired token without exposing it to the browser session', async () => {
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'authorization-intent' } })
     const session = await beginIdentityAuthorization({} as never, 'document-studio')
     mocks.fetch.mockResolvedValueOnce(response)
     await completeIdentityAuthorization({} as never, 'document-studio', 'handoff-code-that-is-long-enough', new URL(session).searchParams.get('state')!)
@@ -198,6 +255,7 @@ describe('Zolta Identity consumer security boundary', () => {
   })
 
   it('reuses a valid access token without refreshing it', async () => {
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'authorization-intent' } })
     const destination = await beginIdentityAuthorization({} as never, 'document-studio')
     mocks.fetch.mockResolvedValueOnce(response)
     await completeIdentityAuthorization({} as never, 'document-studio', 'handoff-code-that-is-long-enough', new URL(destination).searchParams.get('state')!)
@@ -208,6 +266,7 @@ describe('Zolta Identity consumer security boundary', () => {
   })
 
   it('can force a refresh after an upstream API rejects a valid token', async () => {
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'authorization-intent' } })
     const destination = await beginIdentityAuthorization({} as never, 'document-studio')
     mocks.fetch.mockResolvedValueOnce(response)
     await completeIdentityAuthorization({} as never, 'document-studio', 'handoff-code-that-is-long-enough', new URL(destination).searchParams.get('state')!)
@@ -232,6 +291,85 @@ describe('Zolta Identity consumer security boundary', () => {
     expect(mocks.fetch).toHaveBeenCalledWith('/api/v1/identity/auth/logout', expect.objectContaining({
       headers: { Authorization: 'Bearer access-token' },
     }))
+    expect(session.clear).toHaveBeenCalledOnce()
+  })
+
+  it('creates a namespaced hosted logout handoff and clears the consumer session', async () => {
+    const app = identityApplication({} as never, 'document-studio')
+    const session = { data: { secure: { accessToken: 'access-token' } }, update: vi.fn(), clear: vi.fn(async () => undefined) }
+    mocks.records.set(app.sessionCookie, session)
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'logout-intent' } }).mockResolvedValueOnce({})
+
+    const destination = await beginIdentityLogout({} as never, 'document-studio', '/signed-out')
+
+    expect(mocks.fetch).toHaveBeenNthCalledWith(1, '/api/v1/identity/auth/logout/intent', expect.objectContaining({
+      body: expect.objectContaining({ hosted_application: 'document-studio', return_to: '/signed-out' }),
+    }))
+    expect(mocks.fetch).toHaveBeenNthCalledWith(2, '/api/v1/identity/auth/logout', expect.any(Object))
+    expect(new URL(destination).pathname).toBe('/auth/logout')
+    expect(new URL(destination).searchParams.get('intent')).toBe('logout-intent')
+    expect(session.clear).toHaveBeenCalledOnce()
+  })
+
+  it('uses the configured logout redirect when no explicit destination is supplied', async () => {
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'logout-intent' } })
+
+    await beginIdentityLogout({} as never, 'document-studio')
+
+    expect(mocks.fetch).toHaveBeenCalledWith('/api/v1/identity/auth/logout/intent', expect.objectContaining({
+      body: expect.objectContaining({ return_to: '/auth/login' }),
+    }))
+  })
+
+  it('refreshes an expired access token before revoking its current family', async () => {
+    const app = identityApplication({} as never, 'document-studio')
+    const session = {
+      data: {
+        secure: {
+          accessToken: 'expired-access-token',
+          accessTokenExpiresAt: '2020-01-01T00:00:00Z',
+          refreshToken: 'valid-refresh-token',
+          refreshTokenExpiresAt: '2030-01-02T00:00:00Z',
+          connection: 'primary',
+        },
+      },
+      update: vi.fn(async (value: Record<string, unknown>) => Object.assign(session.data, value)),
+      clear: vi.fn(async () => undefined),
+    }
+    mocks.records.set(app.sessionCookie, session as never)
+    mocks.fetch.mockResolvedValueOnce(response).mockResolvedValueOnce({})
+
+    await logoutIdentityApplication({} as never, 'document-studio')
+
+    expect(mocks.fetch).toHaveBeenNthCalledWith(1, '/api/v1/identity/auth/refresh', expect.objectContaining({
+      body: expect.objectContaining({ refresh_token: 'valid-refresh-token' }),
+    }))
+    expect(mocks.fetch).toHaveBeenNthCalledWith(2, '/api/v1/identity/auth/logout', expect.objectContaining({
+      headers: { Authorization: 'Bearer access-token' },
+    }))
+    expect(session.clear).toHaveBeenCalledOnce()
+  })
+
+  it('isolates logout handoffs by configured application', async () => {
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'job-intent' } })
+    const destination = await beginIdentityLogout({} as never, 'job-tracker', '/auth/login')
+
+    expect(new URL(destination).searchParams.get('application')).toBe('job-tracker')
+    expect(mocks.fetch).toHaveBeenCalledWith('/api/v1/identity/auth/logout/intent', expect.objectContaining({
+      body: expect.objectContaining({ client_id: 'job-client-id', hosted_application: 'job-tracker' }),
+    }))
+    expect(mocks.records.get('zolta-identity-document-studio-session')).toBeUndefined()
+  })
+
+  it('continues the hosted handoff when token revocation already occurred', async () => {
+    const app = identityApplication({} as never, 'document-studio')
+    const session = { data: { secure: { accessToken: 'already-revoked' } }, update: vi.fn(), clear: vi.fn(async () => undefined) }
+    mocks.records.set(app.sessionCookie, session)
+    mocks.fetch.mockResolvedValueOnce({ data: { intent: 'still-valid-intent' } })
+      .mockRejectedValueOnce(Object.assign(new Error('revoked'), { status: 401 }))
+
+    await expect(beginIdentityLogout({} as never, 'document-studio', '/signed-out'))
+      .resolves.toContain('still-valid-intent')
     expect(session.clear).toHaveBeenCalledOnce()
   })
 })

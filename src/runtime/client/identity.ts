@@ -10,6 +10,7 @@ export type ZoltaIdentityAccountSection = 'profile' | 'password' | 'sessions' | 
 export type ZoltaIdentityClientOptions = {
   defaultRedirect?: string
   loginPath?: string
+  logoutRedirect?: string
   logoutHeaders?: () => HeadersInit | undefined
 }
 
@@ -60,9 +61,18 @@ export function useZoltaIdentity(application: string, options: ZoltaIdentityClie
     }
   }
 
-  async function logout(): Promise<void> {
+  async function logout(returnTo?: string | string[] | null): Promise<void> {
+    const destination = resolveIdentityRedirect(returnTo, options.logoutRedirect ?? '/')
     try {
-      await session.logout({ headers: options.logoutHeaders?.() })
+      const response = await session.logout({
+        headers: options.logoutHeaders?.(),
+        body: { returnTo: destination },
+      })
+      await navigateTo(response.redirectUrl, { external: true })
+    } catch {
+      // The host session and browser state must not remain visually authenticated
+      // when the Identity handoff service is unavailable.
+      await navigateTo(destination)
     } finally {
       session.session.value = { user: null }
       ready.value = true
@@ -107,7 +117,7 @@ export function useZoltaIdentityUnauthorizedHandler(application: string, options
     if (identityResponseStatus(error) !== 401 || import.meta.server || redirecting.value) return false
     redirecting.value = true
     try {
-      await identity.logout()
+      await identity.sessionLogout({ headers: options.logoutHeaders?.() })
     } finally {
       await identity.login(options.defaultRedirect)
       redirecting.value = false

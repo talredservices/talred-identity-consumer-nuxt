@@ -21,12 +21,19 @@ export type ZoltaIdentityApplication = {
   hostedApplication: string
   /** Configuration key for the sandbox BFF client used by temporary demo accounts. */
   sandboxApplication?: string
+  /** Hosted authentication features explicitly enabled by this consumer application. */
+  features?: {
+    /** Allow the hosted Identity UI to offer a temporary sandbox demo account. */
+    demoAccount?: boolean
+  }
   /** Exact callback URL registered for the confidential client. */
   callbackUrl: string
   /** Cookie name for the app's encrypted server session. */
   sessionCookie?: string
   /** Local path used after authentication when no safe return path is supplied. */
   defaultRedirect?: string
+  /** Local path used after logout when the caller does not provide one. */
+  logoutRedirect?: string
 }
 
 export type ZoltaIdentityRuntimeConfig = {

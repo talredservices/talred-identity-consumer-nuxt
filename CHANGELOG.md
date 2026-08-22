@@ -2,12 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## 0.1.0-beta.11 - 2026-08-22
 
-- Add `createIdentityApiClient`, an Identity-session adapter for the standalone
-  `@zoltasoft/api-client` transport with one refresh-and-retry attempt on `401`.
-- Expose forced access-token refresh through the server facade for custom BFF
-  transports.
+- Add fail-closed, authorization-intent-bound demo policy with strict sandbox
+  client, hosted-application, and callback validation.
+- Add `createIdentityApiClient`, including one refresh-and-retry on upstream
+  `401` and local session cleanup when refresh fails.
+- Refresh expired access tokens before current-family logout, always clear the
+  local session, and record credential-free remote revocation failures.
+- Add per-application and client-side `logoutRedirect` defaults while
+  preserving explicit local-path overrides.
+
+## 0.1.0-beta.10 - 2026-08-18
+
+- Fix logout when the generated BFF route receives an empty POST body.
+
+## 0.1.0-beta.9 - 2026-08-18
+
+- Make host logout revoke and clear the consumer session, then hand the browser to hosted Identity with a short-lived one-time logout intent so the hosted browser session is also terminated.
 
 ## 0.1.0-beta.8 - 2026-08-14
 

@@ -87,6 +87,10 @@ export function identityApplication(event: H3Event, name: string): Required<Zolt
 
   const production = process.env.NODE_ENV === 'production'
   const callbackUrl = validUrl(String(application.callbackUrl), name, production)
+  const demoAccount = application.features?.demoAccount === true
+  if (demoAccount && !application.sandboxApplication) {
+    failConfiguration(name, 'sandboxApplication is required when the demo account feature is enabled')
+  }
   return {
     identityApiUrl: validUrl(String(application.identityApiUrl), name, production),
     hostedAuthUrl: validUrl(String(application.hostedAuthUrl), name, production),
@@ -96,8 +100,29 @@ export function identityApplication(event: H3Event, name: string): Required<Zolt
     callbackUrl,
     sessionCookie: cookieName(name, application.sessionCookie),
     defaultRedirect: safeLocalPath(application.defaultRedirect, '/'),
+    logoutRedirect: safeLocalPath(application.logoutRedirect, '/'),
     sandboxApplication: application.sandboxApplication ? String(application.sandboxApplication) : '',
+    features: { demoAccount },
   }
+}
+
+function validatedSandboxApplication(
+  event: H3Event,
+  name: string,
+  application: Required<ZoltaIdentityApplication>,
+): Required<ZoltaIdentityApplication> {
+  if (!application.sandboxApplication) failConfiguration(name, 'sandboxApplication is required when the demo account feature is enabled')
+  const sandbox = identityApplication(event, application.sandboxApplication)
+  if (sandbox.clientId === application.clientId || sandbox.clientSecret === application.clientSecret) {
+    failConfiguration(name, 'sandbox client credentials must be distinct from the live client')
+  }
+  if (sandbox.hostedApplication !== application.hostedApplication) {
+    failConfiguration(name, 'sandbox hostedApplication must match the live application')
+  }
+  if (sandbox.callbackUrl !== application.callbackUrl) {
+    failConfiguration(name, 'sandbox callbackUrl must exactly match the live callbackUrl')
+  }
+  return sandbox
 }
 
 function tokenApplication(event: H3Event, application: Required<ZoltaIdentityApplication>, connection: 'primary' | 'sandbox'): Required<ZoltaIdentityApplication> {
@@ -161,15 +186,28 @@ export async function beginIdentityAuthorization(
   options: { returnTo?: string, intent?: 'login' | 'register' | 'forgot-password' | 'reset-password', email?: string, token?: string } = {},
 ): Promise<string> {
   const application = identityApplication(event, name)
+  if (application.features.demoAccount) validatedSandboxApplication(event, name, application)
   const state = randomBytes(32).toString('base64url')
   await (await transactionSession(event, name, application)).update({
     state,
     returnTo: safeLocalPath(options.returnTo, application.defaultRedirect),
     createdAt: Date.now(),
   })
+  const response = await $fetch<{ data: { intent: string } }>('/api/v1/identity/auth/authorization/intent', {
+    baseURL: application.identityApiUrl,
+    method: 'POST',
+    body: {
+      client_id: application.clientId,
+      client_secret: application.clientSecret,
+      hosted_application: application.hostedApplication,
+      state,
+      demo_account_enabled: application.features.demoAccount,
+    },
+  })
   const destination = new URL(`/auth/${options.intent ?? 'login'}`, `${application.hostedAuthUrl}/`)
   destination.searchParams.set('application', application.hostedApplication)
   destination.searchParams.set('state', state)
+  destination.searchParams.set('intent', response.data.intent)
   if (options.email) destination.searchParams.set('email', options.email)
   if (options.token) destination.searchParams.set('token', options.token)
   return destination.toString()
@@ -196,8 +234,37 @@ export async function beginIdentityAccountPortal(
   return destination.toString()
 }
 
+/** Creates a one-time hosted logout handoff before clearing the consumer session. */
+export async function beginIdentityLogout(event: H3Event, name: string, returnTo?: string): Promise<string> {
+  const application = identityApplication(event, name)
+  const destinationPath = safeLocalPath(returnTo, application.logoutRedirect)
+
+  try {
+    const response = await $fetch<{ data: { intent: string } }>('/api/v1/identity/auth/logout/intent', {
+      baseURL: application.identityApiUrl,
+      method: 'POST',
+      body: {
+        client_id: application.clientId,
+        client_secret: application.clientSecret,
+        hosted_application: application.hostedApplication,
+        return_to: destinationPath,
+      },
+    })
+    const destination = new URL('/auth/logout', `${application.hostedAuthUrl}/`)
+    destination.searchParams.set('application', application.hostedApplication)
+    destination.searchParams.set('intent', response.data.intent)
+    return destination.toString()
+  } finally {
+    await logoutIdentityApplication(event, name)
+  }
+}
+
 export async function completeIdentityAuthorization(event: H3Event, name: string, code: string, state: string, connection: 'primary' | 'sandbox' = 'primary'): Promise<string> {
   const application = identityApplication(event, name)
+  if (connection === 'sandbox' && !application.features.demoAccount) {
+    throw createError({ statusCode: 403, statusMessage: 'Demo sandbox accounts are disabled for this application.' })
+  }
+  if (connection === 'sandbox') validatedSandboxApplication(event, name, application)
   const transaction = await transactionSession(event, name, application)
   const data = transaction.data
   const valid = typeof data.createdAt === 'number'
@@ -267,16 +334,33 @@ export async function requireIdentityUser(event: H3Event, name: string): Promise
 export async function logoutIdentityApplication(event: H3Event, name: string): Promise<void> {
   const application = identityApplication(event, name)
   const current = await applicationSession(event, name, application)
-  const accessToken = current.data.secure?.accessToken
-  if (accessToken) {
-    const client = tokenApplication(event, application, current.data.secure?.connection ?? 'primary')
-    await $fetch('/api/v1/identity/auth/logout', {
-      baseURL: client.identityApiUrl,
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }).catch(() => undefined)
+  const secure = current.data.secure
+  try {
+    let accessToken = secure?.accessToken
+    if (accessToken && secure?.refreshToken) {
+      const accessExpiresAt = Date.parse(secure.accessTokenExpiresAt)
+      const refreshExpiresAt = Date.parse(secure.refreshTokenExpiresAt)
+      if (Number.isFinite(accessExpiresAt) && accessExpiresAt <= Date.now()
+        && Number.isFinite(refreshExpiresAt) && refreshExpiresAt > Date.now()) {
+        accessToken = await refreshIdentityAccessToken(event, name)
+      }
+    }
+    if (accessToken) {
+      const client = tokenApplication(event, application, secure?.connection ?? 'primary')
+      await $fetch('/api/v1/identity/auth/logout', {
+        baseURL: client.identityApiUrl,
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+    }
+  } catch (error) {
+    const status = (error as { status?: number, statusCode?: number, response?: { status?: number } }).status
+      ?? (error as { statusCode?: number }).statusCode
+      ?? (error as { response?: { status?: number } }).response?.status
+    console.warn('[zolta-identity] Remote session revocation failed.', { application: name, status })
+  } finally {
+    await current.clear()
   }
-  await current.clear()
 }
 
 /** Application-bound server facade for hosts that should not repeat consumer names. */

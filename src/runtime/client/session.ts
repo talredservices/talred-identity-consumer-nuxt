@@ -28,9 +28,14 @@ export function useZoltaIdentitySession(application: string) {
     }
   }
 
-  async function logout(options: { headers?: HeadersInit } = {}): Promise<void> {
-    await useRequestFetch()(identityConsumerRoute(application, 'logout'), { method: 'POST', headers: options.headers })
+  async function logout(options: { headers?: HeadersInit, body?: { returnTo?: string } } = {}): Promise<{ redirectUrl: string }> {
+    const result = await useRequestFetch()< { redirectUrl: string }>(identityConsumerRoute(application, 'logout'), {
+      method: 'POST',
+      headers: options.headers,
+      body: options.body,
+    })
     session.value = { user: null }
+    return result
   }
 
   function authorize(returnTo?: string, intent: 'login' | 'register' | 'forgot-password' | 'reset-password' = 'login'): string {
@@ -41,5 +46,5 @@ export function useZoltaIdentitySession(application: string) {
     return `${identityConsumerRoute(application, 'authorize')}${suffix ? `?${suffix}` : ''}`
   }
 
-  return { session, pending, error, refresh, logout, authorize }
+  return { session, pending, error, refresh, logout, sessionLogout: logout, authorize }
 }
