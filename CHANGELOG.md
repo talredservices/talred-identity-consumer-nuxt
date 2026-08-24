@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.1.0-beta.12 - 2026-08-24
+
+- Split the detailed consumer guide into `docs/usage.md` and focus the README
+  on the module's purpose, installation, and configuration.
+- Update the MIT copyright attribution.
+
 ## 0.1.0-beta.11 - 2026-08-22
 
 - Add fail-closed, authorization-intent-bound demo policy with strict sandbox
