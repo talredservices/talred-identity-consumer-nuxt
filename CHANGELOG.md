@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.1.0-beta.13 - 2026-08-24
+
+- Replace the local sibling `@zoltasoft/api-client` dependency with its
+  published `0.1.0-beta.1` release so clean installs and release workflows do
+  not depend on an adjacent repository checkout.
+
 ## 0.1.0-beta.12 - 2026-08-24
 
 - Split the detailed consumer guide into `docs/usage.md` and focus the README
