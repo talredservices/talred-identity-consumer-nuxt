@@ -1,85 +1,88 @@
 {
-  "name": "@zoltasoft/identity-consumer-nuxt",
-  "version": "0.1.0-beta.13",
-  "description": "Server-side Nuxt consumer for Zolta Identity hosted authentication.",
-  "license": "MIT",
-  "author": "ZoltaSoft",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/zoltasoft/identity-consumer-nuxt.git"
-  },
-  "bugs": {
-    "url": "https://github.com/zoltasoft/identity-consumer-nuxt/issues"
-  },
-  "homepage": "https://github.com/zoltasoft/identity-consumer-nuxt#readme",
-  "engines": {
-    "node": ">=22.0.0",
-    "pnpm": ">=10.0.0"
-  },
-  "packageManager": "pnpm@10.33.0",
-  "type": "module",
-  "sideEffects": false,
-  "files": [
-    "dist"
-  ],
-  "main": "./dist/module.mjs",
-  "module": "./dist/module.mjs",
-  "types": "./dist/module.d.mts",
-  "exports": {
-    ".": {
-      "types": "./dist/module.d.mts",
-      "import": "./dist/module.mjs"
-    },
-    "./runtime": {
-      "types": "./dist/runtime/index.d.mts",
-      "import": "./dist/runtime/index.mjs"
-    },
-    "./runtime/client": {
-      "types": "./dist/runtime/client.d.mts",
-      "import": "./dist/runtime/client.mjs"
-    }
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "scripts": {
-    "build": "unbuild",
-    "lint": "eslint .",
-    "test": "pnpm build && vitest run",
-    "test:contract": "vitest run test/contract.test.ts",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
-    "check": "pnpm test && pnpm lint && pnpm typecheck",
-    "prepack": "pnpm build"
-  },
-  "peerDependencies": {
-    "nuxt": "^3.15.0 || ^4.0.0",
-    "vue": "^3.5.0"
-  },
-  "dependencies": {
-    "@nuxt/kit": "^4.4.8",
-    "@zoltasoft/api-client": "0.1.0-beta.1",
-    "h3": "^1.15.4",
-    "nitropack": "^2.13.4",
-    "ofetch": "^1.5.1",
-    "zod": "^4.4.3"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.5",
-    "@nuxt/schema": "^4.4.8",
-    "@types/node": "^22.15.3",
-    "eslint": "^9.25.1",
-    "typescript": "^5.8.3",
-    "typescript-eslint": "^8.67.0",
-    "unbuild": "^3.5.0",
-    "vue": "^3.5.0",
-    "vitest": "^3.1.2"
-  },
-  "keywords": [
-    "nuxt",
-    "authentication",
-    "oauth",
-    "bff",
-    "zolta-identity"
-  ]
+	"name": "@zoltasoft/identity-consumer-nuxt",
+	"version": "0.1.0-beta.13",
+	"description": "Server-side Nuxt consumer for Zolta Identity hosted authentication.",
+	"license": "MIT",
+	"author": {
+		"name": "Redouane Taleb",
+		"url": "https://github.com/redouaneT"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/zoltasoft/identity-consumer-nuxt.git"
+	},
+	"bugs": {
+		"url": "https://github.com/zoltasoft/identity-consumer-nuxt/issues"
+	},
+	"homepage": "https://github.com/zoltasoft/identity-consumer-nuxt#readme",
+	"engines": {
+		"node": ">=22.0.0",
+		"pnpm": ">=10.0.0"
+	},
+	"packageManager": "pnpm@10.33.0",
+	"type": "module",
+	"sideEffects": false,
+	"files": [
+		"dist"
+	],
+	"main": "./dist/module.mjs",
+	"module": "./dist/module.mjs",
+	"types": "./dist/module.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/module.d.mts",
+			"import": "./dist/module.mjs"
+		},
+		"./runtime": {
+			"types": "./dist/runtime/index.d.mts",
+			"import": "./dist/runtime/index.mjs"
+		},
+		"./runtime/client": {
+			"types": "./dist/runtime/client.d.mts",
+			"import": "./dist/runtime/client.mjs"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "unbuild",
+		"lint": "eslint .",
+		"test": "pnpm build && vitest run",
+		"test:contract": "vitest run test/contract.test.ts",
+		"test:watch": "vitest",
+		"typecheck": "tsc --noEmit",
+		"check": "pnpm test && pnpm lint && pnpm typecheck",
+		"prepack": "pnpm build"
+	},
+	"peerDependencies": {
+		"nuxt": "^3.15.0 || ^4.0.0",
+		"vue": "^3.5.0"
+	},
+	"dependencies": {
+		"@nuxt/kit": "^4.4.8",
+		"@zoltasoft/api-client": "0.1.0-beta.1",
+		"h3": "^1.15.4",
+		"nitropack": "^2.13.4",
+		"ofetch": "^1.5.1",
+		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.39.5",
+		"@nuxt/schema": "^4.4.8",
+		"@types/node": "^22.15.3",
+		"eslint": "^9.25.1",
+		"typescript": "^5.8.3",
+		"typescript-eslint": "^8.67.0",
+		"unbuild": "^3.5.0",
+		"vue": "^3.5.0",
+		"vitest": "^3.1.2"
+	},
+	"keywords": [
+		"nuxt",
+		"authentication",
+		"oauth",
+		"bff",
+		"zolta-identity"
+	]
 }
