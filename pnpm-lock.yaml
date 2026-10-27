@@ -11,9 +11,9 @@ importers:
       '@nuxt/kit':
         specifier: ^4.4.8
         version: 4.5.2(magic-string@1.1.0)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))
-      '@zoltasoft/api-client':
-        specifier: 0.1.0-beta.1
-        version: 0.1.0-beta.1
+      '@talred/api-client':
+        specifier: 0.1.0-beta.3
+        version: 0.1.0-beta.3
       h3:
         specifier: ^1.15.4
         version: 1.15.11
@@ -1114,6 +1114,10 @@ packages:
   '@speed-highlight/core@1.2.24':
     resolution: {integrity: sha512-qeW2e1l78afw8VhRPfPQ1Gjj+KU5XFQ/OFV5ti6eTa9bruO7mJyZtA4vw0ofqmA3tKCkROE9xLk3VZoeRc98nw==}
 
+  '@talred/api-client@0.1.0-beta.3':
+    resolution: {integrity: sha512-DlacqSg9IVyBrjc+Hkr046Q6PiVCncBX9ND6Nn5zKcdmGY51vMEh3gm3fDTJNl8UFv0NQcJINAB0mMobdBfySw==}
+    engines: {node: '>=22.0.0', pnpm: '>=10.0.0'}
+
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
@@ -1349,10 +1353,6 @@ packages:
 
   '@vue/shared@3.5.41':
     resolution: {integrity: sha512-IOnwSCma8j+9xJT6b8H0dEYidC80NsYmNMlZxRsukYcSoGaDBohog5hDxzeUXdFeGWFA++vWvxqOmrr96VlqMA==}
-
-  '@zoltasoft/api-client@0.1.0-beta.1':
-    resolution: {integrity: sha512-S1gAPHmCMmDe9k5IxfM83y1ANEyyofXVuWpY3wFq927mX+tCgP4ehXt29++uUbUu6JYKsEudXAtXSQJO6IYX/w==}
-    engines: {node: '>=22.0.0', pnpm: '>=10.0.0'}
 
   abbrev@3.0.1:
     resolution: {integrity: sha512-AO2ac6pjRB3SJmGJo+v5/aK6Omggp6fsLrs6wN9bd35ulu4cCwaAU9+7ZhXjeqHVkaHThLuzH0nZr0YpCDhygg==}
@@ -1958,6 +1958,7 @@ packages:
   eslint@9.39.5:
     resolution: {integrity: sha512-DgZS62aPLXKlnxILS/AYCoRvHaZeXceIzlXPkkGGzJWSow1aEk0lbTlxUSlyjC8jcaKxAdOnTDz+o1JFSBsyjw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -5214,6 +5215,10 @@ snapshots:
 
   '@speed-highlight/core@1.2.24': {}
 
+  '@talred/api-client@0.1.0-beta.3':
+    dependencies:
+      ofetch: 1.5.1
+
   '@types/chai@5.2.3':
     dependencies:
       '@types/deep-eql': 4.0.2
@@ -5556,10 +5561,6 @@ snapshots:
       '@vue/shared': 3.5.41
 
   '@vue/shared@3.5.41': {}
-
-  '@zoltasoft/api-client@0.1.0-beta.1':
-    dependencies:
-      ofetch: 1.5.1
 
   abbrev@3.0.1: {}
 

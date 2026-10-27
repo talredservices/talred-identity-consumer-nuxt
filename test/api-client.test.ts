@@ -11,13 +11,17 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
 }))
 
-vi.mock('@zoltasoft/api-client', () => {
-  class ZoltaApiError extends Error {
+vi.mock('@talred/api-client', () => {
+  class TalredApiError extends Error {
     isUnauthorized = true
+
+    constructor(statusCode: number, envelope: { message: string }) {
+      super(envelope.message || String(statusCode))
+    }
   }
   return {
-    ZoltaApiError,
-    createZoltaApiClient: mocks.createClient,
+    TalredApiError,
+    createTalredApiClient: mocks.createClient,
   }
 })
 
@@ -31,10 +35,10 @@ vi.mock('../src/runtime/server/identity.js', () => ({
   }),
 }))
 
-import { ZoltaApiError } from '@zoltasoft/api-client'
+import { TalredApiError } from '@talred/api-client'
 import { createIdentityApiClient } from '../src/runtime/server/api-client.js'
 
-const unauthorizedError = () => new ZoltaApiError(401, {
+const unauthorizedError = () => new TalredApiError(401, {
   success: false,
   message: 'Unauthenticated.',
   data: {},

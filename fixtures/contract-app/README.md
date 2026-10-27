@@ -1,6 +1,6 @@
-# Real Zolta Identity contract fixture
+# Real Talred Identity contract fixture
 
-This is a deliberately tiny Nuxt host. It uses the published module exactly as a consuming application does. The contract environment must provision a disposable Zolta Identity API v1 project with:
+This is a deliberately tiny Nuxt host. It uses the published module exactly as a consuming application does. The contract environment must provision a disposable Talred Identity API v1 project with:
 
 - hosted application key `contract-app`;
 - one enabled confidential client whose callback is `http://127.0.0.1:3400/api/identity/contract-app/auth/callback` (or the configured equivalent);

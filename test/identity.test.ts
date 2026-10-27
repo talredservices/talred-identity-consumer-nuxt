@@ -52,7 +52,7 @@ const response = {
 
 function configure(overrides: Record<string, unknown> = {}) {
   ;(globalThis as Record<string, unknown>).useRuntimeConfig = () => ({
-    zoltaIdentity: {
+    talredIdentity: {
       sessionSecret: 'a-unique-consumer-session-secret-with-32-chars',
       applications: {
         documentStudio: {
@@ -89,19 +89,47 @@ function configure(overrides: Record<string, unknown> = {}) {
   })
 }
 
-describe('Zolta Identity consumer security boundary', () => {
+describe('Talred Identity consumer security boundary', () => {
   beforeEach(() => {
     mocks.records.clear()
     mocks.fetch.mockReset()
     configure()
   })
 
+  it('rejects browser-normalized unsafe return paths', () => {
+    for (const path of ['/\n/evil.test', '/%2fevil.test', '/%5cevil.test', '/ /evil.test']) expect(safeLocalPath(path, '/safe')).toBe('/safe')
+  })
+
+  it('supports app mode without a hosted URL and keeps navigation local', async () => {
+    configure({ mode: 'app', hostedAuthUrl: undefined, pages: { login: '/auth/login', register: '/auth/register', forgotPassword: '/auth/forgot-password', resetPassword: '/auth/reset-password', verification: '/auth/verify', account: '/account' } })
+    expect(identityApplication({} as never, 'document-studio').mode).toBe('app')
+    expect(await beginIdentityAuthorization({} as never, 'document-studio', { intent: 'register', returnTo: '//evil.test' })).toBe('/auth/register?redirect=%2Fdocuments')
+    expect(await beginIdentityAccountPortal({} as never, 'document-studio', 'security')).toBe('/account?tab=security')
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects app mode with unsafe page destinations', () => {
+    configure({ mode: 'app', pages: { login: '//evil.test' } })
+    expect(() => identityApplication({} as never, 'document-studio')).toThrow('safe local')
+  })
+
+  it('does not authorize protected operations with a verification-pending session', async () => {
+    const application = identityApplication({} as never, 'document-studio')
+    await requireIdentityUser({} as never, 'document-studio').catch(() => undefined)
+    const session = mocks.records.get(application.sessionCookie)!
+    session.data.user = { id: 'user-1', verificationRequired: true }
+    session.data.secure = { accessToken: 'secret', refreshToken: 'refresh', accessTokenExpiresAt: '2030-01-01' }
+    await expect(requireIdentityUser({} as never, 'document-studio')).rejects.toMatchObject({ statusCode: 403 })
+    await expect(identityAccessToken({} as never, 'document-studio')).rejects.toMatchObject({ statusCode: 403 })
+    expect(await identityAccessToken({} as never, 'document-studio', true)).toBe('secret')
+  })
+
   it('uses a distinct default cookie for each application', () => {
     const documentStudio = identityApplication({} as never, 'document-studio')
     const jobTracker = identityApplication({} as never, 'job-tracker')
 
-    expect(documentStudio.sessionCookie).toBe('zolta-identity-document-studio-session')
-    expect(jobTracker.sessionCookie).toBe('zolta-identity-job-tracker-session')
+    expect(documentStudio.sessionCookie).toBe('talred-identity-document-studio-session')
+    expect(jobTracker.sessionCookie).toBe('talred-identity-job-tracker-session')
     expect(jobTracker.sessionCookie).not.toBe(documentStudio.sessionCookie)
   })
 
@@ -116,6 +144,16 @@ describe('Zolta Identity consumer security boundary', () => {
     configure({ identityApiUrl: 'http://identity.example.test' })
 
     expect(() => identityApplication({} as never, 'document-studio')).toThrow('non-local URLs must use HTTPS')
+
+    vi.unstubAllEnvs()
+  })
+
+  it('allows explicitly listed private HTTP identity hosts in production', () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('NUXT_TALRED_IDENTITY_PRIVATE_HTTP_HOSTS', ' identity-api, STARTER-IDENTITY-API ')
+    configure({ identityApiUrl: 'http://starter-identity-api:8000' })
+
+    expect(identityApplication({} as never, 'document-studio').identityApiUrl).toBe('http://starter-identity-api:8000')
 
     vi.unstubAllEnvs()
   })
@@ -188,7 +226,7 @@ describe('Zolta Identity consumer security boundary', () => {
       method: 'POST',
       body: expect.objectContaining({ client_id: 'client-id', client_secret: 'client-secret' }),
     }))
-    expect(mocks.records.get('zolta-identity-document-studio-session-transaction')?.clear).toHaveBeenCalledOnce()
+    expect(mocks.records.get('talred-identity-document-studio-session-transaction')?.clear).toHaveBeenCalledOnce()
     await expect(completeIdentityAuthorization({} as never, 'document-studio', 'handoff-code-that-is-long-enough', state)).rejects.toMatchObject({ statusCode: 401 })
   })
 
@@ -219,7 +257,7 @@ describe('Zolta Identity consumer security boundary', () => {
     expect(mocks.fetch).toHaveBeenCalledWith('/api/v1/identity/auth/handoff/exchange', expect.objectContaining({
       body: expect.objectContaining({ client_id: 'sandbox-client-id', client_secret: 'sandbox-client-secret' }),
     }))
-    const app = mocks.records.get('zolta-identity-document-studio-session')!
+    const app = mocks.records.get('talred-identity-document-studio-session')!
     expect(app.data.secure).toMatchObject({ connection: 'sandbox' })
     ;(app.data.secure as { accessTokenExpiresAt: string }).accessTokenExpiresAt = '2000-01-01T00:00:00Z'
     mocks.fetch.mockResolvedValueOnce(response)
@@ -233,7 +271,7 @@ describe('Zolta Identity consumer security boundary', () => {
   it('rejects an expired callback transaction', async () => {
     mocks.fetch.mockResolvedValueOnce({ data: { intent: 'authorization-intent' } })
     const destination = await beginIdentityAuthorization({} as never, 'document-studio')
-    const transaction = mocks.records.get('zolta-identity-document-studio-session-transaction')!
+    const transaction = mocks.records.get('talred-identity-document-studio-session-transaction')!
     transaction.data.createdAt = Date.now() - (10 * 60 * 1000) - 1
 
     await expect(completeIdentityAuthorization({} as never, 'document-studio', 'handoff-code-that-is-long-enough', new URL(destination).searchParams.get('state')!)).rejects.toMatchObject({ statusCode: 401 })
@@ -245,7 +283,7 @@ describe('Zolta Identity consumer security boundary', () => {
     const session = await beginIdentityAuthorization({} as never, 'document-studio')
     mocks.fetch.mockResolvedValueOnce(response)
     await completeIdentityAuthorization({} as never, 'document-studio', 'handoff-code-that-is-long-enough', new URL(session).searchParams.get('state')!)
-    const app = mocks.records.get('zolta-identity-document-studio-session')!
+    const app = mocks.records.get('talred-identity-document-studio-session')!
     ;(app.data.secure as { accessTokenExpiresAt: string }).accessTokenExpiresAt = '2000-01-01T00:00:00Z'
     mocks.fetch.mockResolvedValueOnce(response)
 
@@ -275,6 +313,27 @@ describe('Zolta Identity consumer security boundary', () => {
 
     await expect(refreshIdentityAccessToken({} as never, 'document-studio')).resolves.toBe('access-token')
     expect(mocks.fetch).toHaveBeenCalledWith('/api/v1/identity/auth/refresh', expect.any(Object))
+  })
+
+  it('deduplicates concurrent refreshes for the same session token', async () => {
+    const app = identityApplication({} as never, 'document-studio')
+    mocks.records.set(app.sessionCookie, {
+      data: { secure: { accessToken: 'expired-token', accessTokenExpiresAt: '2000-01-01T00:00:00Z', refreshToken: 'shared-refresh-token', refreshTokenExpiresAt: '2030-01-02T00:00:00Z', connection: 'primary' } },
+      update: vi.fn(),
+      clear: vi.fn(),
+    })
+
+    let resolveRefresh!: (value: typeof response) => void
+    const refreshResponse = new Promise<typeof response>((resolve) => { resolveRefresh = resolve })
+    mocks.fetch.mockReturnValue(refreshResponse)
+
+    const firstRefresh = refreshIdentityAccessToken({} as never, 'document-studio')
+    const secondRefresh = refreshIdentityAccessToken({} as never, 'document-studio')
+    await Promise.resolve()
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+
+    resolveRefresh(response)
+    await expect(Promise.all([firstRefresh, secondRefresh])).resolves.toEqual(['access-token', 'access-token'])
   })
 
   it('requires an authenticated session before exposing a user to a server route', async () => {
@@ -358,7 +417,7 @@ describe('Zolta Identity consumer security boundary', () => {
     expect(mocks.fetch).toHaveBeenCalledWith('/api/v1/identity/auth/logout/intent', expect.objectContaining({
       body: expect.objectContaining({ client_id: 'job-client-id', hosted_application: 'job-tracker' }),
     }))
-    expect(mocks.records.get('zolta-identity-document-studio-session')).toBeUndefined()
+    expect(mocks.records.get('talred-identity-document-studio-session')).toBeUndefined()
   })
 
   it('continues the hosted handoff when token revocation already occurred', async () => {

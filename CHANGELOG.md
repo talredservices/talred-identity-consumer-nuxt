@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.1.0-beta.15 - 2026-10-08
+
+- Rename public config namespaces, auto-imports, exported types, default
+  session-cookie prefixes, and contract environment variables from Zolta to
+  Talred. Update consumer applications and deployment configuration when
+  adopting this breaking prerelease.
+
+- Add explicit hosted/app modes and headless auth/account operations with same-origin CSRF checks.
+- Keep credentials, tokens and single-use reauthentication grants server-side; reject protected use of verification-pending sessions.
+- Support Identity-owned Google transaction delivery, local account navigation and app-mode session logout.
+
+## 0.1.0-beta.14 - 2026-10-08
+
+- Publish the module as `@talred/identity-consumer-nuxt` and migrate its API
+  client integration to `@talred/api-client`.
+- Update module metadata, build externals, examples, and repository guidance to
+  the Talred package namespace.
+
 ## 0.1.0-beta.13 - 2026-08-24
 
 - Replace the local sibling `@zoltasoft/api-client` dependency with its

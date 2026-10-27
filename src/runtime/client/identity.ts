@@ -1,13 +1,13 @@
-import { navigateTo, useRequestFetch, useState } from 'nuxt/app'
+import { navigateTo, useRequestFetch, useRuntimeConfig, useState } from 'nuxt/app'
 import { $fetch } from 'ofetch'
 import { computed } from 'vue'
-import { useZoltaIdentitySession } from './session.js'
+import { useTalredIdentitySession } from './session.js'
 import { identityAccountRoute } from './routes.js'
 
-export type ZoltaIdentityIntent = 'login' | 'register' | 'forgot-password' | 'reset-password'
-export type ZoltaIdentityAccountSection = 'profile' | 'password' | 'sessions' | 'privacy' | 'security'
+export type TalredIdentityIntent = 'login' | 'register' | 'forgot-password' | 'reset-password'
+export type TalredIdentityAccountSection = 'profile' | 'password' | 'sessions' | 'privacy' | 'security'
 
-export type ZoltaIdentityClientOptions = {
+export type TalredIdentityClientOptions = {
   defaultRedirect?: string
   loginPath?: string
   logoutRedirect?: string
@@ -19,7 +19,7 @@ export function resolveIdentityRedirect(
   fallback = '/',
 ): string {
   const candidate = Array.isArray(value) ? value[0] : value
-  if (!candidate || !candidate.startsWith('/') || candidate.startsWith('//') || candidate.includes('\\')) return fallback
+  if (!candidate || !candidate.startsWith('/') || candidate.startsWith('//') || candidate.includes('\\') || Array.from(candidate).some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127) || /^\/(?:%2f|%5c)/i.test(candidate)) return fallback
   return candidate
 }
 
@@ -31,7 +31,7 @@ const actionIntents = {
   'reset-password': 'reset-password',
 } as const
 
-export function resolveIdentityAuthIntent(action: string): ZoltaIdentityIntent | null {
+export function resolveIdentityAuthIntent(action: string): TalredIdentityIntent | null {
   return actionIntents[action as keyof typeof actionIntents] ?? null
 }
 
@@ -47,9 +47,17 @@ export function identityResponseStatus(error: unknown): number | undefined {
     .find((value): value is number => typeof value === 'number')
 }
 
-export function useZoltaIdentity(application: string, options: ZoltaIdentityClientOptions = {}) {
-  const session = useZoltaIdentitySession(application)
-  const ready = useState<boolean>(`zolta-identity-session:${application}:ready`, () => false)
+export function useTalredIdentity(application: string, options: TalredIdentityClientOptions = {}) {
+  const session = useTalredIdentitySession(application)
+  const runtimeConfig = useRuntimeConfig()
+  const applicationConfigKey = application.replace(/[-_ ]+([a-z0-9])/gi, (_match, letter: string) => letter.toUpperCase())
+  const configuredApplications = (runtimeConfig.public?.talredIdentityConsumer as { applications?: Record<string, { logoutRedirect?: string }> } | undefined)?.applications
+  const configuredLogoutRedirect = options.logoutRedirect
+    ?? configuredApplications?.[application]?.logoutRedirect
+    ?? configuredApplications?.[applicationConfigKey]?.logoutRedirect
+    ?? '/'
+  const defaultLogoutRedirect = resolveIdentityRedirect(configuredLogoutRedirect, '/')
+  const ready = useState<boolean>(`talred-identity-session:${application}:ready`, () => false)
   const user = computed(() => session.session.value.user)
   const loggedIn = computed(() => Boolean(user.value))
 
@@ -62,7 +70,7 @@ export function useZoltaIdentity(application: string, options: ZoltaIdentityClie
   }
 
   async function logout(returnTo?: string | string[] | null): Promise<void> {
-    const destination = resolveIdentityRedirect(returnTo, options.logoutRedirect ?? '/')
+    const destination = resolveIdentityRedirect(returnTo, defaultLogoutRedirect)
     try {
       const response = await session.logout({
         headers: options.logoutHeaders?.(),
@@ -79,7 +87,7 @@ export function useZoltaIdentity(application: string, options: ZoltaIdentityClie
     }
   }
 
-  async function login(returnTo?: string | string[] | null, intent: ZoltaIdentityIntent = 'login') {
+  async function login(returnTo?: string | string[] | null, intent: TalredIdentityIntent = 'login') {
     const destination = resolveIdentityRedirect(returnTo, options.defaultRedirect ?? '/')
     if (options.loginPath) {
       return await navigateTo({ path: options.loginPath, query: { redirect: destination } })
@@ -87,12 +95,12 @@ export function useZoltaIdentity(application: string, options: ZoltaIdentityClie
     return await navigateTo(session.authorize(destination, intent), { external: true })
   }
 
-  function accountPortalUrl(section: ZoltaIdentityAccountSection = 'profile'): string {
+  function accountPortalUrl(section: TalredIdentityAccountSection = 'profile'): string {
     const tab = section === 'password' || section === 'security' ? 'security' : 'profile'
     return `${identityAccountRoute(application, 'authorize')}?tab=${tab}`
   }
 
-  async function openAccountPortal(section: ZoltaIdentityAccountSection = 'profile') {
+  async function openAccountPortal(section: TalredIdentityAccountSection = 'profile') {
     return await navigateTo(accountPortalUrl(section), { external: true })
   }
 
@@ -109,9 +117,9 @@ export function useZoltaIdentity(application: string, options: ZoltaIdentityClie
   }
 }
 
-export function useZoltaIdentityUnauthorizedHandler(application: string, options: ZoltaIdentityClientOptions = {}) {
-  const identity = useZoltaIdentity(application, options)
-  const redirecting = useState<boolean>(`zolta-identity-session:${application}:redirecting`, () => false)
+export function useTalredIdentityUnauthorizedHandler(application: string, options: TalredIdentityClientOptions = {}) {
+  const identity = useTalredIdentity(application, options)
+  const redirecting = useState<boolean>(`talred-identity-session:${application}:redirecting`, () => false)
 
   async function handle(error: unknown): Promise<boolean> {
     if (identityResponseStatus(error) !== 401 || import.meta.server || redirecting.value) return false
@@ -128,8 +136,8 @@ export function useZoltaIdentityUnauthorizedHandler(application: string, options
   return { isUnauthorized: (error: unknown) => identityResponseStatus(error) === 401, handle }
 }
 
-export function useZoltaIdentityFetch(application: string, options: ZoltaIdentityClientOptions = {}) {
-  const unauthorized = useZoltaIdentityUnauthorizedHandler(application, options)
+export function useTalredIdentityFetch(application: string, options: TalredIdentityClientOptions = {}) {
+  const unauthorized = useTalredIdentityUnauthorizedHandler(application, options)
   const requestFetch = import.meta.server ? useRequestFetch() : $fetch
 
   return async function identityFetch<T>(request: string, fetchOptions?: Parameters<typeof $fetch>[1]): Promise<T> {

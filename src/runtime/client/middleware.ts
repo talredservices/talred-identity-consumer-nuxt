@@ -5,7 +5,7 @@ import { identityConsumerRoute } from './routes.js'
  * Returns an opt-in Nuxt route middleware. Register it per protected page or
  * layout; the module intentionally never installs a global auth guard.
  */
-export function createZoltaIdentityRouteMiddleware(application: string, options: { redirect?: string } = {}) {
+export function createTalredIdentityRouteMiddleware(application: string, options: { redirect?: string } = {}) {
   return defineNuxtRouteMiddleware(async (to) => {
     const eventFetch = useRequestFetch()
     const session = await eventFetch<{ user: unknown | null }>(identityConsumerRoute(application, 'session'))

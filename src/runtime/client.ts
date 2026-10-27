@@ -1,15 +1,20 @@
-export { useZoltaIdentitySession } from './client/session.js'
+export { useTalredIdentitySession } from './client/session.js'
 export {
   identityResponseStatus,
   resolveIdentityAuthIntent,
   resolveIdentityRedirect,
-  useZoltaIdentity,
-  useZoltaIdentityFetch,
-  useZoltaIdentityUnauthorizedHandler,
+  useTalredIdentity,
+  useTalredIdentityFetch,
+  useTalredIdentityUnauthorizedHandler,
 } from './client/identity.js'
 export type {
-  ZoltaIdentityAccountSection,
-  ZoltaIdentityClientOptions,
-  ZoltaIdentityIntent,
+  TalredIdentityAccountSection,
+  TalredIdentityClientOptions,
+  TalredIdentityIntent,
 } from './client/identity.js'
-export { createZoltaIdentityRouteMiddleware } from './client/middleware.js'
+export { createTalredIdentityRouteMiddleware } from './client/middleware.js'
+
+export { useTalredIdentityOperations } from './client/operations.js'
+export type { IdentityFlowResult, IdentityCredentials, IdentityRegistration, IdentitySensitiveAction } from './client/operations.js'
+
+export type { TalredIdentityFlowStatus } from '../types.js'

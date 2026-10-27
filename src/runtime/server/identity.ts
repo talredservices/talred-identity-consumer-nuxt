@@ -1,15 +1,16 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { createError, type H3Event, useSession } from 'h3'
 import { $fetch } from 'ofetch'
 import { useRuntimeConfig } from 'nitropack/runtime/config'
-import type { ZoltaIdentityApplication, ZoltaIdentityRuntimeConfig, ZoltaIdentityUser } from '../../types.js'
+import type { TalredIdentityApplication, TalredIdentityRuntimeConfig, TalredIdentityUser } from '../../types.js'
 
-type IdentityLoginData = {
+export type IdentityLoginData = {
   access_token: string
   access_token_expires_at: string
   refresh_token: string
   refresh_token_expires_at: string
   identity: {
+    project?: { email_verification_required?: boolean }
     user: {
       id: string
       email: string
@@ -21,8 +22,11 @@ type IdentityLoginData = {
   }
 }
 
+export type ResolvedIdentityApplication = Omit<Required<TalredIdentityApplication>, 'pages' | 'mode'> & { mode: 'hosted' | 'app', pages?: { login: string, register: string, forgotPassword: string, resetPassword: string, verification: string, account: string } }
+
 type ConsumerSession = {
-  user?: ZoltaIdentityUser
+  user?: TalredIdentityUser
+  reauthentication?: { grant: string, operation: string, expiresAt: string }
   secure?: {
     accessToken: string
     accessTokenExpiresAt: string
@@ -40,13 +44,14 @@ type AuthorizationTransaction = {
 
 const sessionMaxAge = 60 * 60 * 24 * 7
 const stateTtlMilliseconds = 10 * 60 * 1000
+const inFlightRefreshes = new Map<string, Promise<IdentityLoginData>>()
 
 function configurationKey(name: string): string {
   return name.replace(/-([a-z0-9])/gi, (_, character: string) => character.toUpperCase())
 }
 
 function safeLocalPath(value: string | undefined, fallback: string): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return fallback
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.includes('\\') || Array.from(value).some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127) || /^\/(?:%2f|%5c)/i.test(value)) return fallback
   return value
 }
 
@@ -54,11 +59,11 @@ function failConfiguration(name: string, reason: string): never {
   throw createError({ statusCode: 503, statusMessage: `Identity application [${name}] is not configured: ${reason}.` })
 }
 
-function validUrl(value: string, name: string, production: boolean): string {
+function validUrl(value: string, name: string, production: boolean, privateHttpHosts: string[] = []): string {
   try {
     const url = new URL(value)
     if (!['http:', 'https:'].includes(url.protocol)) failConfiguration(name, 'URL must use HTTP or HTTPS')
-    if (production && url.protocol !== 'https:' && !['localhost', '127.0.0.1', '::1'].includes(url.hostname)) {
+    if (production && url.protocol !== 'https:' && !['localhost', '127.0.0.1', '::1'].includes(url.hostname) && !privateHttpHosts.includes(url.hostname)) {
       failConfiguration(name, 'non-local URLs must use HTTPS in production')
     }
     return url.toString().replace(/\/$/, '')
@@ -69,31 +74,40 @@ function validUrl(value: string, name: string, production: boolean): string {
 }
 
 function cookieName(name: string, configured?: string): string {
-  const value = configured || `zolta-identity-${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-session`
+  const value = configured || `talred-identity-${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-session`
   if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,128}$/.test(value)) failConfiguration(name, 'sessionCookie is invalid')
   return value
 }
 
-export function identityApplication(event: H3Event, name: string): Required<ZoltaIdentityApplication> {
-  const runtime = (useRuntimeConfig(event).zoltaIdentity ?? {}) as Partial<ZoltaIdentityRuntimeConfig>
+export function identityApplication(event: H3Event, name: string): ResolvedIdentityApplication {
+  const privateHttpHosts = String(process.env.NUXT_TALRED_IDENTITY_PRIVATE_HTTP_HOSTS ?? '')
+    .split(',')
+    .map(host => host.trim().toLowerCase())
+    .filter(Boolean)
+  const runtime = (useRuntimeConfig(event).talredIdentity ?? {}) as Partial<TalredIdentityRuntimeConfig>
   const applications = runtime.applications ?? {}
   const application = applications[name] ?? applications[configurationKey(name)]
   if (!application) failConfiguration(name, 'application is missing')
 
-  const required = ['identityApiUrl', 'hostedAuthUrl', 'clientId', 'clientSecret', 'hostedApplication', 'callbackUrl'] as const
+  const mode = application.mode ?? 'hosted'
+  if (!['hosted', 'app'].includes(mode)) failConfiguration(name, 'mode must be hosted or app')
+  if (mode === 'app' && (!application.pages || ['login', 'register', 'forgotPassword', 'resetPassword', 'verification', 'account'].some(key => { const path = application.pages?.[key as keyof typeof application.pages]; return !path || safeLocalPath(path, '') !== path }))) failConfiguration(name, 'app mode requires safe local auth and account pages')
+  const required = ['identityApiUrl', 'clientId', 'clientSecret', 'hostedApplication', 'callbackUrl', ...(mode === 'hosted' ? ['hostedAuthUrl' as const] : [])] as const
   const missing = required.filter(key => !String(application[key] ?? '').trim())
   if (missing.length > 0) failConfiguration(name, `missing ${missing.join(', ')}`)
-  if (String(runtime.sessionSecret ?? '').length < 32) failConfiguration(name, 'zoltaIdentity.sessionSecret must be at least 32 characters')
+  if (String(runtime.sessionSecret ?? '').length < 32) failConfiguration(name, 'talredIdentity.sessionSecret must be at least 32 characters')
 
   const production = process.env.NODE_ENV === 'production'
-  const callbackUrl = validUrl(String(application.callbackUrl), name, production)
+  const callbackUrl = validUrl(String(application.callbackUrl), name, production, privateHttpHosts)
   const demoAccount = application.features?.demoAccount === true
   if (demoAccount && !application.sandboxApplication) {
     failConfiguration(name, 'sandboxApplication is required when the demo account feature is enabled')
   }
   return {
-    identityApiUrl: validUrl(String(application.identityApiUrl), name, production),
-    hostedAuthUrl: validUrl(String(application.hostedAuthUrl), name, production),
+    identityApiUrl: validUrl(String(application.identityApiUrl), name, production, privateHttpHosts),
+    mode,
+    pages: application.pages,
+    hostedAuthUrl: application.hostedAuthUrl ? validUrl(application.hostedAuthUrl, name, production, privateHttpHosts) : '',
     clientId: String(application.clientId),
     clientSecret: String(application.clientSecret),
     hostedApplication: String(application.hostedApplication),
@@ -109,8 +123,8 @@ export function identityApplication(event: H3Event, name: string): Required<Zolt
 function validatedSandboxApplication(
   event: H3Event,
   name: string,
-  application: Required<ZoltaIdentityApplication>,
-): Required<ZoltaIdentityApplication> {
+  application: ResolvedIdentityApplication,
+): ResolvedIdentityApplication {
   if (!application.sandboxApplication) failConfiguration(name, 'sandboxApplication is required when the demo account feature is enabled')
   const sandbox = identityApplication(event, application.sandboxApplication)
   if (sandbox.clientId === application.clientId || sandbox.clientSecret === application.clientSecret) {
@@ -125,19 +139,19 @@ function validatedSandboxApplication(
   return sandbox
 }
 
-function tokenApplication(event: H3Event, application: Required<ZoltaIdentityApplication>, connection: 'primary' | 'sandbox'): Required<ZoltaIdentityApplication> {
+function tokenApplication(event: H3Event, application: ResolvedIdentityApplication, connection: 'primary' | 'sandbox'): ResolvedIdentityApplication {
   if (connection === 'primary') return application
   if (!application.sandboxApplication) failConfiguration(application.hostedApplication, 'sandboxApplication is required for a sandbox handoff')
   return identityApplication(event, application.sandboxApplication)
 }
 
 function sessionPassword(event: H3Event, name: string): string {
-  const password = String((useRuntimeConfig(event).zoltaIdentity as Partial<ZoltaIdentityRuntimeConfig> | undefined)?.sessionSecret ?? '')
-  if (password.length < 32) failConfiguration(name, 'zoltaIdentity.sessionSecret must be at least 32 characters')
+  const password = String((useRuntimeConfig(event).talredIdentity as Partial<TalredIdentityRuntimeConfig> | undefined)?.sessionSecret ?? '')
+  if (password.length < 32) failConfiguration(name, 'talredIdentity.sessionSecret must be at least 32 characters')
   return password
 }
 
-async function applicationSession(event: H3Event, name: string, application: Required<ZoltaIdentityApplication>) {
+export async function applicationSession(event: H3Event, name: string, application: ResolvedIdentityApplication) {
   return useSession<ConsumerSession>(event, {
     password: sessionPassword(event, name),
     name: application.sessionCookie,
@@ -146,7 +160,7 @@ async function applicationSession(event: H3Event, name: string, application: Req
   })
 }
 
-async function transactionSession(event: H3Event, name: string, application: Required<ZoltaIdentityApplication>) {
+async function transactionSession(event: H3Event, name: string, application: ResolvedIdentityApplication) {
   return useSession<AuthorizationTransaction>(event, {
     password: sessionPassword(event, name),
     name: `${application.sessionCookie}-transaction`,
@@ -155,20 +169,22 @@ async function transactionSession(event: H3Event, name: string, application: Req
   })
 }
 
-function user(data: IdentityLoginData): ZoltaIdentityUser {
+function user(data: IdentityLoginData): TalredIdentityUser {
   return {
     id: data.identity.user.id,
     email: data.identity.user.email,
     name: data.identity.user.username,
     username: data.identity.user.username,
     emailVerified: data.identity.user.email_verified,
+    verificationRequired: data.identity.project?.email_verification_required === true && !data.identity.user.email_verified,
     isTemporary: data.identity.user.is_temporary,
     expiresAt: data.identity.user.temporary_expires_at,
   }
 }
 
-async function storeLogin(event: H3Event, name: string, application: Required<ZoltaIdentityApplication>, data: IdentityLoginData, connection: 'primary' | 'sandbox'): Promise<void> {
+export async function storeLogin(event: H3Event, name: string, application: ResolvedIdentityApplication, data: IdentityLoginData, connection: 'primary' | 'sandbox'): Promise<void> {
   await (await applicationSession(event, name, application)).update({
+    reauthentication: undefined,
     user: user(data),
     secure: {
       accessToken: data.access_token,
@@ -186,6 +202,14 @@ export async function beginIdentityAuthorization(
   options: { returnTo?: string, intent?: 'login' | 'register' | 'forgot-password' | 'reset-password', email?: string, token?: string } = {},
 ): Promise<string> {
   const application = identityApplication(event, name)
+  if (application.mode === 'app' && application.pages) {
+    const intent = options.intent ?? 'login'
+    const paths = { login: application.pages.login, register: application.pages.register, 'forgot-password': application.pages.forgotPassword, 'reset-password': application.pages.resetPassword }
+    const query = new URLSearchParams({ redirect: safeLocalPath(options.returnTo, application.defaultRedirect) })
+    if (options.email) query.set('email', options.email)
+    if (options.token) query.set('token', options.token)
+    return `${paths[intent]}?${query}`
+  }
   if (application.features.demoAccount) validatedSandboxApplication(event, name, application)
   const state = randomBytes(32).toString('base64url')
   await (await transactionSession(event, name, application)).update({
@@ -220,6 +244,7 @@ export async function beginIdentityAccountPortal(
   tab: 'profile' | 'security' = 'profile',
 ): Promise<string> {
   const application = identityApplication(event, name)
+  if (application.mode === 'app' && application.pages) return `${application.pages.account}?tab=${tab}`
   const accessToken = await identityAccessToken(event, name)
   const response = await $fetch<{ data: { intent: string } }>('/api/v1/identity/auth/account/intent', {
     baseURL: application.identityApiUrl,
@@ -238,6 +263,10 @@ export async function beginIdentityAccountPortal(
 export async function beginIdentityLogout(event: H3Event, name: string, returnTo?: string): Promise<string> {
   const application = identityApplication(event, name)
   const destinationPath = safeLocalPath(returnTo, application.logoutRedirect)
+  if (application.mode === 'app') {
+    await logoutIdentityApplication(event, name)
+    return destinationPath
+  }
 
   try {
     const response = await $fetch<{ data: { intent: string } }>('/api/v1/identity/auth/logout/intent', {
@@ -259,6 +288,36 @@ export async function beginIdentityLogout(event: H3Event, name: string, returnTo
   }
 }
 
+export async function beginIdentityGoogle(event: H3Event, name: string, input: Record<string, unknown>): Promise<string> {
+  const application = identityApplication(event, name)
+  if (application.mode !== 'app') throw createError({ statusCode: 404, statusMessage: 'App authentication is disabled.' })
+  const transaction = await transactionSession(event, name, application)
+  const state = randomBytes(32).toString('base64url')
+  await transaction.update({ state, createdAt: Date.now(), returnTo: safeLocalPath(typeof input.returnTo === 'string' ? input.returnTo : undefined, application.defaultRedirect) })
+  const response = await $fetch<{ data: { redirect_url: string } }>('/api/v1/identity/auth/google/authorize', {
+    baseURL: application.identityApiUrl, method: 'POST',
+    headers: input.sensitive_operation ? { Authorization: `Bearer ${await identityAccessToken(event, name)}` } : undefined,
+    body: {
+      client_id: application.clientId, client_secret: application.clientSecret,
+      application_key: application.hostedApplication, redirect_uri: application.callbackUrl,
+      state, terms_accepted: input.terms_accepted === true, policy_revision: input.policy_revision, sensitive_operation: input.sensitive_operation,
+    },
+  })
+  const destination = new URL(response.data.redirect_url)
+  if (destination.origin !== 'https://accounts.google.com') throw createError({ statusCode: 502, statusMessage: 'Unexpected provider destination.' })
+  return destination.toString()
+}
+
+export async function completeIdentityProviderDenial(event: H3Event, name: string, state: string): Promise<string> {
+  const application = identityApplication(event, name)
+  const transaction = await transactionSession(event, name, application)
+  const valid = transaction.data.state === state && typeof transaction.data.createdAt === 'number'
+    && Date.now() - transaction.data.createdAt >= 0 && Date.now() - transaction.data.createdAt <= stateTtlMilliseconds
+  await transaction.clear()
+  if (!valid || application.mode !== 'app') throw createError({ statusCode: 401, statusMessage: 'Invalid provider state.' })
+  return `${application.pages!.login}?error=access_denied`
+}
+
 export async function completeIdentityAuthorization(event: H3Event, name: string, code: string, state: string, connection: 'primary' | 'sandbox' = 'primary'): Promise<string> {
   const application = identityApplication(event, name)
   if (connection === 'sandbox' && !application.features.demoAccount) {
@@ -278,21 +337,34 @@ export async function completeIdentityAuthorization(event: H3Event, name: string
 
   try {
     const client = tokenApplication(event, application, connection)
-    const response = await $fetch<{ data: IdentityLoginData }>('/api/v1/identity/auth/handoff/exchange', {
+    const response = await $fetch<{ data: IdentityLoginData | { reauthentication: { grant: string, operation: string, expires_at: string, source_token_hash: string } } }>('/api/v1/identity/auth/handoff/exchange', {
       baseURL: client.identityApiUrl,
       method: 'POST',
       body: { client_id: client.clientId, client_secret: client.clientSecret, code, redirect_uri: client.callbackUrl },
     })
+    if ('reauthentication' in response.data) {
+      const current = await applicationSession(event, name, application)
+      const grant = response.data.reauthentication
+      if (!current.data.secure?.accessToken || createHash('sha256').update(current.data.secure.accessToken).digest('hex') !== grant.source_token_hash) {
+        throw createError({ statusCode: 401, statusMessage: 'The signed-in account changed during reauthentication.' })
+      }
+      await current.update({ reauthentication: { grant: grant.grant, operation: grant.operation, expiresAt: grant.expires_at } })
+      return safeLocalPath(data.returnTo, application.pages?.account ?? application.defaultRedirect)
+    }
     await storeLogin(event, name, application, response.data, connection)
-    return safeLocalPath(data.returnTo, application.defaultRedirect)
+    const currentUser = await identityBrowserSession(event, name)
+    return currentUser?.verificationRequired && application.pages ? application.pages.verification : safeLocalPath(data.returnTo, application.defaultRedirect)
   } finally {
     await transaction.clear()
   }
 }
 
-export async function identityAccessToken(event: H3Event, name: string): Promise<string> {
+export async function identityAccessToken(event: H3Event, name: string, allowVerificationPending = false): Promise<string> {
   const application = identityApplication(event, name)
   const current = await applicationSession(event, name, application)
+  if (!allowVerificationPending && current.data.user?.verificationRequired) {
+    throw createError({ statusCode: 403, statusMessage: 'Email verification is required.', data: { code: 'verification_required' } })
+  }
   const secure = current.data.secure
   if (!secure?.accessToken || !secure.refreshToken) {
     throw createError({ statusCode: 401, statusMessage: 'An Identity session is required.' })
@@ -311,23 +383,34 @@ export async function refreshIdentityAccessToken(event: H3Event, name: string): 
     throw createError({ statusCode: 401, statusMessage: 'An Identity session is required.' })
   }
   const client = tokenApplication(event, application, secure.connection ?? 'primary')
-  const response = await $fetch<{ data: IdentityLoginData }>('/api/v1/identity/auth/refresh', {
-    baseURL: client.identityApiUrl,
-    method: 'POST',
-    body: { client_id: client.clientId, client_secret: client.clientSecret, refresh_token: secure.refreshToken },
-  })
-  await storeLogin(event, name, application, response.data, secure.connection ?? 'primary')
-  return response.data.access_token
+  const refreshKey = `${name}:${secure.refreshToken}`
+  let refreshPromise = inFlightRefreshes.get(refreshKey)
+  if (!refreshPromise) {
+    refreshPromise = $fetch<{ data: IdentityLoginData }>('/api/v1/identity/auth/refresh', {
+      baseURL: client.identityApiUrl,
+      method: 'POST',
+      body: { client_id: client.clientId, client_secret: client.clientSecret, refresh_token: secure.refreshToken },
+    }).then(response => response.data)
+    inFlightRefreshes.set(refreshKey, refreshPromise)
+  }
+  try {
+    const response = await refreshPromise
+    await storeLogin(event, name, application, response, secure.connection ?? 'primary')
+    return response.access_token
+  } finally {
+    if (inFlightRefreshes.get(refreshKey) === refreshPromise) inFlightRefreshes.delete(refreshKey)
+  }
 }
 
-export async function identityBrowserSession(event: H3Event, name: string): Promise<ZoltaIdentityUser | null> {
+export async function identityBrowserSession(event: H3Event, name: string): Promise<TalredIdentityUser | null> {
   const application = identityApplication(event, name)
   return (await applicationSession(event, name, application)).data.user ?? null
 }
 
-export async function requireIdentityUser(event: H3Event, name: string): Promise<ZoltaIdentityUser> {
+export async function requireIdentityUser(event: H3Event, name: string): Promise<TalredIdentityUser> {
   const currentUser = await identityBrowserSession(event, name)
   if (!currentUser) throw createError({ statusCode: 401, statusMessage: 'An Identity session is required.' })
+  if (currentUser.verificationRequired) throw createError({ statusCode: 403, statusMessage: 'Email verification is required.', data: { code: 'verification_required' } })
   return currentUser
 }
 
@@ -357,7 +440,7 @@ export async function logoutIdentityApplication(event: H3Event, name: string): P
     const status = (error as { status?: number, statusCode?: number, response?: { status?: number } }).status
       ?? (error as { statusCode?: number }).statusCode
       ?? (error as { response?: { status?: number } }).response?.status
-    console.warn('[zolta-identity] Remote session revocation failed.', { application: name, status })
+    console.warn('[talred-identity] Remote session revocation failed.', { application: name, status })
   } finally {
     await current.clear()
   }

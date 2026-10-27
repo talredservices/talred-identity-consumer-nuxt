@@ -1,4 +1,4 @@
-export type { ZoltaIdentityApplication, ZoltaIdentityRuntimeConfig, ZoltaIdentityUser } from '../types.js'
+export type { TalredIdentityApplication, TalredIdentityRuntimeConfig, TalredIdentityUser, TalredIdentityFlowStatus } from '../types.js'
 export {
   identityAccessToken,
   refreshIdentityAccessToken,

@@ -2,7 +2,7 @@ import { addImports, addServerHandler, createResolver, defineNuxtModule } from '
 import type { NuxtModule } from '@nuxt/schema'
 import { z } from 'zod'
 
-export type ZoltaIdentityConsumerModuleOptions = {
+export type TalredIdentityConsumerModuleOptions = {
   /** Prefix for the module's server-side BFF routes. */
   routePrefix?: string
 }
@@ -11,10 +11,10 @@ const optionsSchema = z.object({
   routePrefix: z.string().regex(/^\/[a-z0-9/_-]*[a-z0-9_-]$/i).default('/api/identity'),
 })
 
-const zoltaIdentityConsumerModule: NuxtModule<ZoltaIdentityConsumerModuleOptions> = defineNuxtModule<ZoltaIdentityConsumerModuleOptions>({
+const talredIdentityConsumerModule: NuxtModule<TalredIdentityConsumerModuleOptions> = defineNuxtModule<TalredIdentityConsumerModuleOptions>({
   meta: {
-    name: '@zoltasoft/identity-consumer-nuxt',
-    configKey: 'zoltaIdentityConsumer',
+    name: '@talred/identity-consumer-nuxt',
+    configKey: 'talredIdentityConsumer',
     compatibility: { nuxt: '^3.15.0 || ^4.0.0' },
   },
   defaults: {
@@ -25,14 +25,31 @@ const zoltaIdentityConsumerModule: NuxtModule<ZoltaIdentityConsumerModuleOptions
     const resolver = createResolver(import.meta.url)
     const route = (suffix: string) => `${options.routePrefix}${suffix}`
 
-    nuxt.options.runtimeConfig.zoltaIdentity ??= {
+    const serverIdentityConfig = nuxt.options.runtimeConfig.talredIdentity as { applications?: Record<string, { logoutRedirect?: unknown }> } | undefined
+    const configuredApplications = serverIdentityConfig?.applications
+    const existingPublicConfig = nuxt.options.runtimeConfig.public.talredIdentityConsumer as { applications?: Record<string, { logoutRedirect?: unknown }> } | undefined
+    const existingPublicApplications = existingPublicConfig?.applications ?? {}
+    const applicationNames = new Set([...Object.keys(configuredApplications ?? {}), ...Object.keys(existingPublicApplications)])
+    const publicApplications = Object.fromEntries([...applicationNames].map((name) => {
+      const publicLogoutRedirect = existingPublicApplications[name]?.logoutRedirect
+      const configuredLogoutRedirect = configuredApplications?.[name]?.logoutRedirect
+      return [name, {
+        logoutRedirect: typeof publicLogoutRedirect === 'string'
+          ? publicLogoutRedirect
+          : typeof configuredLogoutRedirect === 'string' ? configuredLogoutRedirect : '/',
+      }]
+    }))
+
+    nuxt.options.runtimeConfig.talredIdentity ??= {
       sessionSecret: '',
       applications: {},
     }
-    nuxt.options.runtimeConfig.public.zoltaIdentityConsumer = {
-      ...(nuxt.options.runtimeConfig.public.zoltaIdentityConsumer as Record<string, unknown> | undefined),
+    nuxt.options.runtimeConfig.public.talredIdentityConsumer = {
+      ...(nuxt.options.runtimeConfig.public.talredIdentityConsumer as Record<string, unknown> | undefined),
       routePrefix: options.routePrefix,
+      applications: publicApplications,
     }
+    addServerHandler({ route: route('/:application/operations/:operation'), method: 'post', handler: resolver.resolve('./runtime/server/api/operation.post') })
     addServerHandler({ route: route('/:application/auth/authorize'), handler: resolver.resolve('./runtime/server/api/authorize.get') })
     addServerHandler({ route: route('/:application/auth/callback'), handler: resolver.resolve('./runtime/server/api/callback.get') })
     addServerHandler({ route: route('/:application/auth/session'), handler: resolver.resolve('./runtime/server/api/session.get') })
@@ -41,15 +58,16 @@ const zoltaIdentityConsumerModule: NuxtModule<ZoltaIdentityConsumerModuleOptions
     addServerHandler({ route: route('/:application/account/logout'), handler: resolver.resolve('./runtime/server/api/account-logout.get') })
 
     addImports([
-      { name: 'useZoltaIdentitySession', from: resolver.resolve('./runtime/client/session') },
-      { name: 'useZoltaIdentity', from: resolver.resolve('./runtime/client/identity') },
-      { name: 'useZoltaIdentityFetch', from: resolver.resolve('./runtime/client/identity') },
-      { name: 'useZoltaIdentityUnauthorizedHandler', from: resolver.resolve('./runtime/client/identity') },
+      { name: 'useTalredIdentityOperations', from: resolver.resolve('./runtime/client/operations') },
+      { name: 'useTalredIdentitySession', from: resolver.resolve('./runtime/client/session') },
+      { name: 'useTalredIdentity', from: resolver.resolve('./runtime/client/identity') },
+      { name: 'useTalredIdentityFetch', from: resolver.resolve('./runtime/client/identity') },
+      { name: 'useTalredIdentityUnauthorizedHandler', from: resolver.resolve('./runtime/client/identity') },
       { name: 'resolveIdentityRedirect', from: resolver.resolve('./runtime/client/identity') },
       { name: 'resolveIdentityAuthIntent', from: resolver.resolve('./runtime/client/identity') },
-      { name: 'createZoltaIdentityRouteMiddleware', from: resolver.resolve('./runtime/client/middleware') },
+      { name: 'createTalredIdentityRouteMiddleware', from: resolver.resolve('./runtime/client/middleware') },
     ])
   },
 })
 
-export default zoltaIdentityConsumerModule
+export default talredIdentityConsumerModule

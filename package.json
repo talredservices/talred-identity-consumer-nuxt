@@ -1,7 +1,7 @@
 {
-	"name": "@zoltasoft/identity-consumer-nuxt",
-	"version": "0.1.0-beta.13",
-	"description": "Server-side Nuxt consumer for Zolta Identity hosted authentication.",
+	"name": "@talred/identity-consumer-nuxt",
+	"version": "0.1.0-beta.15",
+	"description": "Headless Nuxt BFF integration for Talred Identity authentication and accounts.",
 	"license": "MIT",
 	"author": {
 		"name": "Redouane Taleb",
@@ -9,12 +9,12 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/zoltasoft/identity-consumer-nuxt.git"
+		"url": "git+https://github.com/talredservices/talred-identity-consumer-nuxt.git"
 	},
 	"bugs": {
-		"url": "https://github.com/zoltasoft/identity-consumer-nuxt/issues"
+		"url": "https://github.com/talredservices/talred-identity-consumer-nuxt/issues"
 	},
-	"homepage": "https://github.com/zoltasoft/identity-consumer-nuxt#readme",
+	"homepage": "https://github.com/talredservices/talred-identity-consumer-nuxt#readme",
 	"engines": {
 		"node": ">=22.0.0",
 		"pnpm": ">=10.0.0"
@@ -61,7 +61,7 @@
 	},
 	"dependencies": {
 		"@nuxt/kit": "^4.4.8",
-		"@zoltasoft/api-client": "0.1.0-beta.1",
+		"@talred/api-client": "0.1.0-beta.3",
 		"h3": "^1.15.4",
 		"nitropack": "^2.13.4",
 		"ofetch": "^1.5.1",
@@ -83,6 +83,6 @@
 		"authentication",
 		"oauth",
 		"bff",
-		"zolta-identity"
+		"talred-identity"
 	]
 }
