@@ -13,8 +13,11 @@ vi.mock('h3', () => ({
   setResponseHeader: vi.fn(),
 }))
 
+vi.mock('../src/runtime/server/csrf.js', () => ({ requireIdentityCsrf: vi.fn() }))
+
 vi.mock('../src/runtime/server/identity.js', () => ({
   beginIdentityLogout: mocks.beginIdentityLogout,
+  identityApplication: () => ({ mode: 'hosted' }),
 }))
 
 import handler from '../src/runtime/server/api/logout.post.js'

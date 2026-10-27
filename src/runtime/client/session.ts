@@ -1,15 +1,15 @@
 import { useRequestFetch, useState } from 'nuxt/app'
-import type { ZoltaIdentityUser } from '../../types.js'
+import type { TalredIdentityUser } from '../../types.js'
 import { identityConsumerRoute } from './routes.js'
 
-type BrowserSession = { user: ZoltaIdentityUser | null }
+type BrowserSession = { user: TalredIdentityUser | null }
 
 /**
  * Opt-in browser session state. It deliberately exposes only the public user
  * profile; access and refresh tokens never leave server-side session storage.
  */
-export function useZoltaIdentitySession(application: string) {
-  const key = `zolta-identity-session:${application}`
+export function useTalredIdentitySession(application: string) {
+  const key = `talred-identity-session:${application}`
   const session = useState<BrowserSession>(key, () => ({ user: null }))
   const pending = useState<boolean>(`${key}:pending`, () => false)
   const error = useState<unknown>(`${key}:error`, () => null)
@@ -29,10 +29,13 @@ export function useZoltaIdentitySession(application: string) {
   }
 
   async function logout(options: { headers?: HeadersInit, body?: { returnTo?: string } } = {}): Promise<{ redirectUrl: string }> {
+    const headers = new Headers(options.headers)
+    headers.set('x-talred-identity', '1')
+    headers.set('content-type', 'application/json')
     const result = await useRequestFetch()< { redirectUrl: string }>(identityConsumerRoute(application, 'logout'), {
       method: 'POST',
-      headers: options.headers,
-      body: options.body,
+      headers,
+      body: options.body ?? {},
     })
     session.value = { user: null }
     return result

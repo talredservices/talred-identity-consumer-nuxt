@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   navigateTo: vi.fn(),
   requestFetch: vi.fn(),
+  runtimeConfig: { public: { talredIdentityConsumer: { routePrefix: '/api/identity', applications: {} as Record<string, { logoutRedirect?: string }> } } },
   states: new Map<string, { value: unknown }>(),
 }))
 
 vi.mock('nuxt/app', () => ({
   navigateTo: mocks.navigateTo,
   useRequestFetch: () => mocks.requestFetch,
-  useRuntimeConfig: () => ({ public: { zoltaIdentityConsumer: { routePrefix: '/api/identity' } } }),
+  useRuntimeConfig: () => mocks.runtimeConfig,
   useState: (key: string, factory: () => unknown) => {
     if (!mocks.states.has(key)) mocks.states.set(key, { value: factory() })
     return mocks.states.get(key)
@@ -20,14 +21,15 @@ import {
   identityResponseStatus,
   resolveIdentityAuthIntent,
   resolveIdentityRedirect,
-  useZoltaIdentity,
+  useTalredIdentity,
 } from '../src/runtime/client/identity.js'
 import { identityAccountRoute } from '../src/runtime/client/routes.js'
 
-describe('Zolta Identity host helpers', () => {
+describe('Talred Identity host helpers', () => {
   beforeEach(() => {
     mocks.navigateTo.mockReset()
     mocks.requestFetch.mockReset()
+    mocks.runtimeConfig.public.talredIdentityConsumer.applications = {}
     mocks.states.clear()
   })
 
@@ -57,7 +59,7 @@ describe('Zolta Identity host helpers', () => {
 
   it('clears client state and follows the hosted logout handoff', async () => {
     mocks.requestFetch.mockResolvedValueOnce({ redirectUrl: 'https://identity.example.test/auth/logout?intent=opaque' })
-    const identity = useZoltaIdentity('document-studio')
+    const identity = useTalredIdentity('document-studio')
     identity.session.value = { user: { id: '1' } as never }
 
     await identity.logout('/signed-out')
@@ -72,7 +74,7 @@ describe('Zolta Identity host helpers', () => {
 
   it('redirects to the signed-out destination when the handoff service fails', async () => {
     mocks.requestFetch.mockRejectedValueOnce(new Error('Identity unavailable'))
-    const identity = useZoltaIdentity('document-studio')
+    const identity = useTalredIdentity('document-studio')
     identity.session.value = { user: { id: '1' } as never }
 
     await identity.logout('/auth/login')
@@ -83,7 +85,7 @@ describe('Zolta Identity host helpers', () => {
 
   it('uses the configured logout destination when the caller does not override it', async () => {
     mocks.requestFetch.mockRejectedValueOnce(new Error('Identity unavailable'))
-    const identity = useZoltaIdentity('job-tracker', { logoutRedirect: '/fr/auth/login' })
+    const identity = useTalredIdentity('job-tracker', { logoutRedirect: '/fr/auth/login' })
 
     await identity.logout()
 
@@ -91,5 +93,20 @@ describe('Zolta Identity host helpers', () => {
       body: { returnTo: '/fr/auth/login' },
     }))
     expect(mocks.navigateTo).toHaveBeenCalledWith('/fr/auth/login')
+  })
+
+  it('uses the public per-application logout destination as its default', async () => {
+    mocks.runtimeConfig.public.talredIdentityConsumer.applications = {
+      jobTracker: { logoutRedirect: '/fr/jobs' },
+    }
+    mocks.requestFetch.mockRejectedValueOnce(new Error('Identity unavailable'))
+    const identity = useTalredIdentity('job-tracker')
+
+    await identity.logout()
+
+    expect(mocks.requestFetch).toHaveBeenCalledWith('/api/identity/job-tracker/auth/logout', expect.objectContaining({
+      body: { returnTo: '/fr/jobs' },
+    }))
+    expect(mocks.navigateTo).toHaveBeenCalledWith('/fr/jobs')
   })
 })

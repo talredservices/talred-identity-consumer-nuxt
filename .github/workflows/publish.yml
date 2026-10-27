@@ -22,4 +22,5 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
-      - run: pnpm publish --access public --tag beta --provenance --no-git-checks
+      - name: Stage package for npm review
+        run: npx --yes npm@11.21.0 stage publish --access public --tag beta

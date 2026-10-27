@@ -1,18 +1,19 @@
-export type ZoltaIdentityUser = {
+export type TalredIdentityUser = {
   id: string
   email: string
   name: string
   username: string
   emailVerified: boolean
+  verificationRequired?: boolean
   isTemporary?: boolean
   expiresAt?: string | null
 }
 
-export type ZoltaIdentityApplication = {
-  /** Base URL of the Zolta Identity Laravel API, without a trailing slash. */
+type TalredIdentityApplicationBase = {
+  /** Base URL of the Talred Identity Laravel API, without a trailing slash. */
   identityApiUrl: string
-  /** Base URL of the Zolta Identity Nuxt hosted-auth application. */
-  hostedAuthUrl: string
+  /** Base URL of the Talred Identity Nuxt hosted-auth application. */
+  hostedAuthUrl?: string
   /** Confidential client ID created in the Identity project. */
   clientId: string
   /** Confidential client secret. Server-only: never place this in public runtime config. */
@@ -36,8 +37,16 @@ export type ZoltaIdentityApplication = {
   logoutRedirect?: string
 }
 
-export type ZoltaIdentityRuntimeConfig = {
+export type TalredIdentityRuntimeConfig = {
   /** 32+ character secret used only to encrypt consumer sessions. */
   sessionSecret: string
-  applications: Record<string, Partial<ZoltaIdentityApplication>>
+  applications: Record<string, Partial<TalredIdentityApplication>>
 }
+
+/** Hosted is the backward-compatible default. App mode owns all visible pages. */
+export type TalredIdentityApplication = TalredIdentityApplicationBase & (
+  | { mode?: 'hosted', hostedAuthUrl: string, pages?: never }
+  | { mode: 'app', pages: { login: string, register: string, forgotPassword: string, resetPassword: string, verification: string, account: string } }
+)
+
+export type TalredIdentityFlowStatus = 'authenticated' | 'verification_required' | 'reauthentication_required' | 'completed'
